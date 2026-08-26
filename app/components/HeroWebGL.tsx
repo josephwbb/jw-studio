@@ -1,7 +1,7 @@
 "use client";
 
-import { Canvas, useFrame } from "@react-three/fiber";
-import { useMemo, useRef, useState } from "react";
+import { Canvas, useFrame, useThree } from "@react-three/fiber";
+import { useMemo, useRef } from "react";
 import * as THREE from "three";
 
 /* =========================================================
@@ -10,8 +10,10 @@ import * as THREE from "three";
 
 function Particles() {
   const points = useRef<THREE.Points>(null);
+  const { size } = useThree();
 
-  const particleCount = 85;
+  const isMobile = size.width < 768;
+  const particleCount = isMobile ? 30 : 85;
 
   const positions = useMemo(() => {
     const array = new Float32Array(particleCount * 3);
@@ -23,13 +25,13 @@ function Particles() {
     }
 
     return array;
-  }, []);
+  }, [particleCount]);
 
-  useFrame((state, delta) => {
+  useFrame((_, delta) => {
     if (!points.current) return;
 
-    points.current.rotation.y += delta * 0.004;
-    points.current.rotation.x += delta * 0.0015;
+    points.current.rotation.y += delta * (isMobile ? 0.002 : 0.004);
+    points.current.rotation.x += delta * (isMobile ? 0.0007 : 0.0015);
   });
 
   return (
@@ -42,10 +44,10 @@ function Particles() {
       </bufferGeometry>
 
       <pointsMaterial
-        size={0.014}
+        size={isMobile ? 0.012 : 0.014}
         color="#dce8e0"
         transparent
-        opacity={0.28}
+        opacity={isMobile ? 0.2 : 0.28}
         sizeAttenuation
         depthWrite={false}
       />
@@ -65,16 +67,12 @@ function EnergyCore() {
     const time = state.clock.elapsedTime;
 
     if (core.current) {
-      const pulse =
-        0.105 + Math.sin(time * 1.8) * 0.006;
-
+      const pulse = 0.105 + Math.sin(time * 1.8) * 0.006;
       core.current.scale.setScalar(pulse);
     }
 
     if (innerGlow.current) {
-      const pulse =
-        0.28 + Math.sin(time * 1.25) * 0.018;
-
+      const pulse = 0.28 + Math.sin(time * 1.25) * 0.018;
       innerGlow.current.scale.setScalar(pulse);
     }
   });
@@ -82,7 +80,7 @@ function EnergyCore() {
   return (
     <>
       <mesh ref={innerGlow}>
-        <sphereGeometry args={[1, 16, 16]} />
+        <sphereGeometry args={[1, 12, 12]} />
 
         <meshBasicMaterial
           color="#eaf5ee"
@@ -93,7 +91,7 @@ function EnergyCore() {
       </mesh>
 
       <mesh ref={core}>
-        <sphereGeometry args={[1, 12, 12]} />
+        <sphereGeometry args={[1, 10, 10]} />
 
         <meshBasicMaterial
           color="#ffffff"
@@ -117,21 +115,24 @@ function Planet() {
   const orbit2 = useRef<THREE.Mesh>(null);
   const orbit3 = useRef<THREE.Mesh>(null);
 
+  const { size } = useThree();
+  const isMobile = size.width < 768;
+
   const planetGeometry = useMemo(() => {
     return new THREE.SphereGeometry(
       1.7,
-      48,
-      32
+      isMobile ? 28 : 48,
+      isMobile ? 20 : 32
     );
-  }, []);
+  }, [isMobile]);
 
   const atmosphereGeometry = useMemo(() => {
     return new THREE.SphereGeometry(
       1.7,
-      32,
-      24
+      isMobile ? 20 : 32,
+      isMobile ? 16 : 24
     );
-  }, []);
+  }, [isMobile]);
 
   useFrame((state, delta) => {
     if (!group.current) return;
@@ -144,35 +145,33 @@ function Planet() {
     --------------------------------------------- */
 
     const targetX =
-      pointer.y * 0.12 +
-      Math.sin(time * 0.18) * 0.025;
+      pointer.y * (isMobile ? 0.04 : 0.12) +
+      Math.sin(time * 0.18) * (isMobile ? 0.012 : 0.025);
 
     const targetY =
-      pointer.x * 0.17 +
-      Math.sin(time * 0.14) * 0.06;
+      pointer.x * (isMobile ? 0.06 : 0.17) +
+      Math.sin(time * 0.14) * (isMobile ? 0.02 : 0.06);
 
-    group.current.rotation.x =
-      THREE.MathUtils.damp(
-        group.current.rotation.x,
-        targetX,
-        3.5,
-        delta
-      );
+    group.current.rotation.x = THREE.MathUtils.damp(
+      group.current.rotation.x,
+      targetX,
+      isMobile ? 2 : 3.5,
+      delta
+    );
 
-    group.current.rotation.y =
-      THREE.MathUtils.damp(
-        group.current.rotation.y,
-        targetY,
-        3.5,
-        delta
-      );
+    group.current.rotation.y = THREE.MathUtils.damp(
+      group.current.rotation.y,
+      targetY,
+      isMobile ? 2 : 3.5,
+      delta
+    );
 
     /* ---------------------------------------------
        Floating
     --------------------------------------------- */
 
     group.current.position.y =
-      Math.sin(time * 0.45) * 0.04;
+      Math.sin(time * 0.45) * (isMobile ? 0.02 : 0.04);
 
     /* ---------------------------------------------
        Orbit movement
@@ -180,17 +179,17 @@ function Planet() {
 
     if (orbit1.current) {
       orbit1.current.rotation.z +=
-        delta * 0.035;
+        delta * (isMobile ? 0.018 : 0.035);
     }
 
     if (orbit2.current) {
       orbit2.current.rotation.x +=
-        delta * 0.022;
+        delta * (isMobile ? 0.012 : 0.022);
     }
 
     if (orbit3.current) {
       orbit3.current.rotation.y -=
-        delta * 0.014;
+        delta * (isMobile ? 0.008 : 0.014);
     }
   });
 
@@ -210,10 +209,7 @@ function Planet() {
       </mesh>
 
       {/* =================================================
-          SOFT ATMOSPHERE
-
-          BackSide makes this behave like a thin shell
-          around the planet rather than a white disc.
+          ATMOSPHERE
       ================================================= */}
 
       <mesh
@@ -232,13 +228,15 @@ function Planet() {
 
       {/* =================================================
           INNER SPHERE
-
-          Gives the centre more visual depth.
       ================================================= */}
 
       <mesh scale={0.72}>
         <sphereGeometry
-          args={[1.7, 24, 18]}
+          args={[
+            1.7,
+            isMobile ? 16 : 24,
+            isMobile ? 12 : 18,
+          ]}
         />
 
         <meshStandardMaterial
@@ -266,15 +264,15 @@ function Planet() {
         rotation={[
           Math.PI / 2.8,
           0.3,
-          0
+          0,
         ]}
       >
         <torusGeometry
           args={[
             2.12,
             0.006,
-            6,
-            72
+            5,
+            isMobile ? 40 : 72,
           ]}
         />
 
@@ -295,15 +293,15 @@ function Planet() {
         rotation={[
           1.1,
           0.8,
-          0.4
+          0.4,
         ]}
       >
         <torusGeometry
           args={[
             2.38,
             0.004,
-            6,
-            72
+            5,
+            isMobile ? 40 : 72,
           ]}
         />
 
@@ -324,15 +322,15 @@ function Planet() {
         rotation={[
           0.45,
           -0.7,
-          1.2
+          1.2,
         ]}
       >
         <torusGeometry
           args={[
             2.62,
             0.0025,
-            6,
-            64
+            5,
+            isMobile ? 36 : 64,
           ]}
         />
 
@@ -350,12 +348,14 @@ function Planet() {
 
       <mesh position={[2.12, 0, 0]}>
         <sphereGeometry
-          args={[0.035, 10, 10]}
+          args={[
+            0.035,
+            isMobile ? 6 : 10,
+            isMobile ? 6 : 10,
+          ]}
         />
 
-        <meshBasicMaterial
-          color="#ffffff"
-        />
+        <meshBasicMaterial color="#ffffff" />
       </mesh>
 
       {/* =================================================
@@ -364,7 +364,11 @@ function Planet() {
 
       <mesh position={[-1.65, 0.45, 0]}>
         <sphereGeometry
-          args={[0.018, 8, 8]}
+          args={[
+            0.018,
+            isMobile ? 6 : 8,
+            isMobile ? 6 : 8,
+          ]}
         />
 
         <meshBasicMaterial
@@ -383,34 +387,37 @@ function Planet() {
 ========================================================= */
 
 function Scene() {
+  const { size } = useThree();
+  const isMobile = size.width < 768;
+
   return (
     <>
       {/* Ambient fill */}
 
       <ambientLight
-        intensity={0.12}
+        intensity={isMobile ? 0.1 : 0.12}
       />
 
       {/* Main directional light */}
 
       <directionalLight
         position={[4, 4, 5]}
-        intensity={2.4}
+        intensity={isMobile ? 1.8 : 2.4}
       />
 
       {/* Cool side light */}
 
       <pointLight
         position={[-4, -1, 4]}
-        intensity={1.1}
+        intensity={isMobile ? 0.7 : 1.1}
         distance={9}
       />
 
-      {/* Very subtle rear light */}
+      {/* Rear light */}
 
       <pointLight
         position={[3, 2, -4]}
-        intensity={0.45}
+        intensity={isMobile ? 0.25 : 0.45}
         distance={8}
       />
 
@@ -426,49 +433,38 @@ function Scene() {
 ========================================================= */
 
 export default function HeroWebGL() {
-  const [ready, setReady] =
-    useState(false);
-
   return (
     <div
-      className={`
+      className="
         absolute
         inset-0
         z-[5]
         pointer-events-none
-        transition-opacity
-        duration-[1000ms]
-        ${
-          ready
-            ? "opacity-100"
-            : "opacity-0"
-        }
-      `}
+      "
     >
       <Canvas
         camera={{
           position: [0, 0, 6],
-          fov: 42
+          fov: 42,
         }}
 
-        onCreated={() => {
-          setTimeout(() => {
-            setReady(true);
-          }, 200);
-        }}
-
-        dpr={1}
+        dpr={[1, 1.25]}
 
         gl={{
-          antialias: true,
+          antialias: false,
           alpha: true,
-          powerPreference:
-            "high-performance",
+          powerPreference: "high-performance",
           stencil: false,
-          depth: true
+          depth: true,
         }}
 
         frameloop="always"
+
+        performance={{
+          min: 0.5,
+          max: 1,
+          debounce: 200,
+        }}
       >
         <Scene />
       </Canvas>
