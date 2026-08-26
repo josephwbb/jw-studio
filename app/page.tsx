@@ -136,6 +136,146 @@ export default function Home() {
           transform: translateY(-3px);
         }
 
+              /* ---------------------------------------------------------
+         ABSTRACT MENU CONTROL
+      --------------------------------------------------------- */
+
+      .menu-control {
+        position: relative;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 72px;
+        height: 72px;
+        border: 1px solid rgba(242, 240, 235, 0.18);
+        border-radius: 999px;
+        background: rgba(242, 240, 235, 0.025);
+        backdrop-filter: blur(14px);
+        -webkit-backdrop-filter: blur(14px);
+        transition:
+          transform 700ms cubic-bezier(0.16, 1, 0.3, 1),
+          border-color 500ms ease,
+          background-color 500ms ease;
+      }
+
+      .menu-control::before {
+        content: "";
+        position: absolute;
+        inset: 6px;
+        border: 1px solid rgba(242, 240, 235, 0.08);
+        border-radius: 999px;
+        transition:
+          transform 800ms cubic-bezier(0.16, 1, 0.3, 1),
+          border-color 500ms ease;
+      }
+
+      .menu-control::after {
+        content: "";
+        position: absolute;
+        width: 3px;
+        height: 3px;
+        top: 13px;
+        right: 16px;
+        border-radius: 999px;
+        background: rgba(242, 240, 235, 0.8);
+        transition:
+          transform 700ms cubic-bezier(0.16, 1, 0.3, 1),
+          opacity 400ms ease;
+      }
+
+      .menu-control:hover {
+        transform: rotate(8deg) scale(1.04);
+        border-color: rgba(242, 240, 235, 0.38);
+        background: rgba(242, 240, 235, 0.06);
+      }
+
+      .menu-control:hover::before {
+        transform: rotate(-16deg) scale(0.92);
+        border-color: rgba(242, 240, 235, 0.16);
+      }
+
+      .menu-control.open {
+        transform: rotate(45deg);
+        border-color: rgba(242, 240, 235, 0.35);
+        background: rgba(242, 240, 235, 0.07);
+      }
+
+      .menu-control.open::before {
+        transform: rotate(-70deg) scale(0.92);
+        border-color: rgba(242, 240, 235, 0.2);
+      }
+
+      .menu-control.open::after {
+        transform: scale(0);
+        opacity: 0;
+      }
+
+      .menu-control-inner {
+        position: relative;
+        z-index: 2;
+        display: flex;
+        width: 20px;
+        height: 20px;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .menu-line {
+        position: absolute;
+        width: 18px;
+        height: 1px;
+        background: currentColor;
+        transition:
+          transform 600ms cubic-bezier(0.16, 1, 0.3, 1),
+          opacity 400ms ease;
+      }
+
+      .menu-line:first-child {
+        transform: translateY(-3px);
+      }
+
+      .menu-line:last-child {
+        transform: translateY(3px);
+      }
+
+      .menu-control.open .menu-line:first-child {
+        transform: rotate(45deg);
+      }
+
+      .menu-control.open .menu-line:last-child {
+        transform: rotate(-45deg);
+      }
+
+      .menu-label {
+        position: absolute;
+        right: 82px;
+        top: 50%;
+        transform: translateY(-50%);
+        font-size: 8px;
+        letter-spacing: 0.22em;
+        text-transform: uppercase;
+        color: rgba(242, 240, 235, 0.38);
+        white-space: nowrap;
+        transition:
+          opacity 400ms ease,
+          transform 500ms cubic-bezier(0.16, 1, 0.3, 1);
+      }
+
+      .menu-control-wrap:hover .menu-label {
+        opacity: 0.75;
+        transform: translate(-4px, -50%);
+      }
+
+      @media (max-width: 640px) {
+        .menu-control {
+          width: 60px;
+          height: 60px;
+        }
+
+        .menu-label {
+          display: none;
+        }
+      }
         /* ---------------------------------------------------------
            HERO MOTION
         --------------------------------------------------------- */
@@ -258,26 +398,27 @@ export default function Home() {
           JW<span className="opacity-40">/</span>STUDIO
         </a>
 
+             <div className="menu-control-wrap relative z-10">
+        <span className="menu-label">
+          {menuOpen ? "Close" : "Navigate"}
+        </span>
+
         <button
+          type="button"
+          aria-label={menuOpen ? "Close navigation menu" : "Open navigation menu"}
+          aria-expanded={menuOpen}
           onClick={() => setMenuOpen(!menuOpen)}
-          className="relative z-10 flex items-center gap-3 text-[10px] uppercase tracking-[0.2em]"
+          className={`menu-control ${
+            menuOpen ? "open" : ""
+          }`}
         >
-          <span>{menuOpen ? "Close" : "Menu"}</span>
-
-          <span className="flex h-5 w-5 flex-col justify-center gap-[5px]">
-            <span
-              className={`block h-px w-full bg-current transition-transform duration-500 ${
-                menuOpen ? "translate-y-[3px] rotate-45" : ""
-              }`}
-            />
-
-            <span
-              className={`block h-px w-full bg-current transition-transform duration-500 ${
-                menuOpen ? "-translate-y-[3px] -rotate-45" : ""
-              }`}
-            />
+          <span className="menu-control-inner">
+            <span className="menu-line" />
+            <span className="menu-line" />
           </span>
         </button>
+      </div>
+
       </header>
 
       {/* =========================================================

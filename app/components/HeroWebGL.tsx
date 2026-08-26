@@ -1,75 +1,24 @@
 "use client";
 
-import { Canvas, useFrame,  extend } from "@react-three/fiber";
-import { Environment, shaderMaterial } from "@react-three/drei";
-import { useRef,useMemo, useState } from "react";
+import { Canvas, useFrame } from "@react-three/fiber";
+import { useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 
-const FresnelMaterial = shaderMaterial(
-  {
-    color: new THREE.Color("#dfeee5"),
-    power: 2.5,
-    intensity: 1.4,
-  },
-  `
-    varying vec3 vNormal;
-    varying vec3 vWorldPosition;
-
-    void main() {
-      vNormal = normalize(normalMatrix * normal);
-
-      vec4 worldPosition = modelMatrix * vec4(position, 1.0);
-      vWorldPosition = worldPosition.xyz;
-
-      gl_Position = projectionMatrix * viewMatrix * worldPosition;
-    }
-  `,
-  `
-    uniform vec3 color;
-    uniform float power;
-    uniform float intensity;
-
-    varying vec3 vNormal;
-    varying vec3 vWorldPosition;
-
-    void main() {
-
-      vec3 viewDirection = normalize(cameraPosition - vWorldPosition);
-
-      float fresnel = pow(
-        1.0 - max(dot(vNormal, viewDirection), 0.0),
-        power
-      );
-
-      float glow = fresnel * intensity;
-
-      gl_FragColor = vec4(
-        color * glow,
-        glow
-      );
-    }
-  `
-);
-
-extend({ FresnelMaterial });
-
-declare module "@react-three/fiber" {
-  interface ThreeElements {
-    fresnelMaterial: any;
-  }
-}
+/* =========================================================
+   PARTICLES
+========================================================= */
 
 function Particles() {
   const points = useRef<THREE.Points>(null);
 
-  const particleCount = 350;
+  const particleCount = 85;
 
   const positions = useMemo(() => {
     const array = new Float32Array(particleCount * 3);
 
     for (let i = 0; i < particleCount; i++) {
-      array[i * 3] = (Math.random() - 0.5) * 7;
-      array[i * 3 + 1] = (Math.random() - 0.5) * 5;
+      array[i * 3] = (Math.random() - 0.5) * 8;
+      array[i * 3 + 1] = (Math.random() - 0.5) * 5.5;
       array[i * 3 + 2] = (Math.random() - 0.5) * 4;
     }
 
@@ -79,244 +28,447 @@ function Particles() {
   useFrame((state, delta) => {
     if (!points.current) return;
 
-    points.current.rotation.y += delta * 0.015;
-    points.current.rotation.x += delta * 0.006;
+    points.current.rotation.y += delta * 0.004;
+    points.current.rotation.x += delta * 0.0015;
   });
 
   return (
     <points ref={points}>
       <bufferGeometry>
-  <bufferAttribute
-  attach="attributes-position"
-  args={[positions, 3]}
-/>
+        <bufferAttribute
+          attach="attributes-position"
+          args={[positions, 3]}
+        />
       </bufferGeometry>
 
       <pointsMaterial
-        size={0.012}
-        color="#dce5df"
+        size={0.014}
+        color="#dce8e0"
         transparent
-        opacity={0.35}
+        opacity={0.28}
         sizeAttenuation
+        depthWrite={false}
       />
     </points>
   );
 }
 
+/* =========================================================
+   ENERGY CORE
+========================================================= */
 
-function Sculpture() {
+function EnergyCore() {
+  const core = useRef<THREE.Mesh>(null);
+  const innerGlow = useRef<THREE.Mesh>(null);
+
+  useFrame((state) => {
+    const time = state.clock.elapsedTime;
+
+    if (core.current) {
+      const pulse =
+        0.105 + Math.sin(time * 1.8) * 0.006;
+
+      core.current.scale.setScalar(pulse);
+    }
+
+    if (innerGlow.current) {
+      const pulse =
+        0.28 + Math.sin(time * 1.25) * 0.018;
+
+      innerGlow.current.scale.setScalar(pulse);
+    }
+  });
+
+  return (
+    <>
+      <mesh ref={innerGlow}>
+        <sphereGeometry args={[1, 16, 16]} />
+
+        <meshBasicMaterial
+          color="#eaf5ee"
+          transparent
+          opacity={0.06}
+          depthWrite={false}
+        />
+      </mesh>
+
+      <mesh ref={core}>
+        <sphereGeometry args={[1, 12, 12]} />
+
+        <meshBasicMaterial
+          color="#ffffff"
+          transparent
+          opacity={0.95}
+          depthWrite={false}
+        />
+      </mesh>
+    </>
+  );
+}
+
+/* =========================================================
+   PLANET
+========================================================= */
+
+function Planet() {
   const group = useRef<THREE.Group>(null);
 
   const orbit1 = useRef<THREE.Mesh>(null);
   const orbit2 = useRef<THREE.Mesh>(null);
   const orbit3 = useRef<THREE.Mesh>(null);
 
+  const planetGeometry = useMemo(() => {
+    return new THREE.SphereGeometry(
+      1.7,
+      48,
+      32
+    );
+  }, []);
+
+  const atmosphereGeometry = useMemo(() => {
+    return new THREE.SphereGeometry(
+      1.7,
+      32,
+      24
+    );
+  }, []);
+
   useFrame((state, delta) => {
     if (!group.current) return;
 
     const time = state.clock.elapsedTime;
+    const pointer = state.pointer;
 
-const { pointer } = state;
+    /* ---------------------------------------------
+       Mouse movement
+    --------------------------------------------- */
 
-    // Slow, luxurious movement
-  group.current.rotation.x = THREE.MathUtils.lerp(
-  group.current.rotation.x,
-  pointer.y * 0.18 + Math.sin(time * 0.25) * 0.12,
-  delta * 1.5
-);
+    const targetX =
+      pointer.y * 0.12 +
+      Math.sin(time * 0.18) * 0.025;
 
-group.current.rotation.y = THREE.MathUtils.lerp(
-  group.current.rotation.y,
-  pointer.x * 0.35 + Math.sin(time * 0.18) * 0.25,
-  delta * 1.5
-);
+    const targetY =
+      pointer.x * 0.17 +
+      Math.sin(time * 0.14) * 0.06;
 
-    group.current.position.y = Math.sin(time * 0.5) * 0.08;
- 
-if (orbit1.current) {
-  orbit1.current.rotation.z += delta * 0.08;
-}
+    group.current.rotation.x =
+      THREE.MathUtils.damp(
+        group.current.rotation.x,
+        targetX,
+        3.5,
+        delta
+      );
 
-if (orbit2.current) {
-  orbit2.current.rotation.x += delta * 0.05;
-}
+    group.current.rotation.y =
+      THREE.MathUtils.damp(
+        group.current.rotation.y,
+        targetY,
+        3.5,
+        delta
+      );
 
-if (orbit3.current) {
-  orbit3.current.rotation.y -= delta * 0.035;
-}
+    /* ---------------------------------------------
+       Floating
+    --------------------------------------------- */
 
-});
+    group.current.position.y =
+      Math.sin(time * 0.45) * 0.04;
+
+    /* ---------------------------------------------
+       Orbit movement
+    --------------------------------------------- */
+
+    if (orbit1.current) {
+      orbit1.current.rotation.z +=
+        delta * 0.035;
+    }
+
+    if (orbit2.current) {
+      orbit2.current.rotation.x +=
+        delta * 0.022;
+    }
+
+    if (orbit3.current) {
+      orbit3.current.rotation.y -=
+        delta * 0.014;
+    }
+  });
 
   return (
     <group ref={group}>
-      {/* Main glass form */}
-      <mesh>
-        <icosahedronGeometry args={[1.7, 6]} />
-   <meshPhysicalMaterial
-  color="#e8eee9"
-  transmission={1}
-  thickness={2}
-  roughness={0.035}
-  metalness={0.05}
-  ior={1.45}
-  transparent
-  opacity={0.82}
-  envMapIntensity={2.4}
-/>
+
+      {/* =================================================
+          MAIN PLANET
+      ================================================= */}
+
+      <mesh geometry={planetGeometry}>
+        <meshStandardMaterial
+          color="#c7d6cd"
+          roughness={0.24}
+          metalness={0.03}
+        />
       </mesh>
 
-<mesh scale={1.015}>
-  <icosahedronGeometry args={[1.7, 6]} />
-  <fresnelMaterial
-    transparent
-    depthWrite={false}
-    blending={THREE.AdditiveBlending}
-  />
-</mesh>
+      {/* =================================================
+          SOFT ATMOSPHERE
 
-<mesh scale={1.08}>
-  <sphereGeometry args={[1.7, 64, 64]} />
+          BackSide makes this behave like a thin shell
+          around the planet rather than a white disc.
+      ================================================= */}
 
-  <meshBasicMaterial
-    color="#c8d8ce"
-    transparent
-    opacity={0.055}
-    side={THREE.BackSide}
-  />
-</mesh>
+      <mesh
+        geometry={atmosphereGeometry}
+        scale={1.025}
+      >
+        <meshBasicMaterial
+          color="#e7f2eb"
+          transparent
+          opacity={0.055}
+          side={THREE.BackSide}
+          depthWrite={false}
+          blending={THREE.AdditiveBlending}
+        />
+      </mesh>
 
+      {/* =================================================
+          INNER SPHERE
 
+          Gives the centre more visual depth.
+      ================================================= */}
 
-
-      {/* Inner form */}
       <mesh scale={0.72}>
-        <icosahedronGeometry args={[1.7, 5]} />
-        <meshPhysicalMaterial
-          color="#ffffff"
-          transmission={1}
-          thickness={1}
-          roughness={0.03}
+        <sphereGeometry
+          args={[1.7, 24, 18]}
+        />
+
+        <meshStandardMaterial
+          color="#eef5f0"
+          roughness={0.16}
           metalness={0}
-          ior={1.5}
           transparent
-          opacity={0.35}
-          envMapIntensity={2}
+          opacity={0.13}
+          depthWrite={false}
         />
       </mesh>
 
-      {/* Core */}
-      <mesh scale={0.14}>
-        <sphereGeometry args={[1, 32, 32]} />
+      {/* =================================================
+          ENERGY CORE
+      ================================================= */}
+
+      <EnergyCore />
+
+      {/* =================================================
+          ORBIT 1
+      ================================================= */}
+
+      <mesh
+        ref={orbit1}
+        rotation={[
+          Math.PI / 2.8,
+          0.3,
+          0
+        ]}
+      >
+        <torusGeometry
+          args={[
+            2.12,
+            0.006,
+            6,
+            72
+          ]}
+        />
+
+        <meshBasicMaterial
+          color="#edf5ef"
+          transparent
+          opacity={0.2}
+          depthWrite={false}
+        />
+      </mesh>
+
+      {/* =================================================
+          ORBIT 2
+      ================================================= */}
+
+      <mesh
+        ref={orbit2}
+        rotation={[
+          1.1,
+          0.8,
+          0.4
+        ]}
+      >
+        <torusGeometry
+          args={[
+            2.38,
+            0.004,
+            6,
+            72
+          ]}
+        />
+
+        <meshBasicMaterial
+          color="#e4efe8"
+          transparent
+          opacity={0.11}
+          depthWrite={false}
+        />
+      </mesh>
+
+      {/* =================================================
+          ORBIT 3
+      ================================================= */}
+
+      <mesh
+        ref={orbit3}
+        rotation={[
+          0.45,
+          -0.7,
+          1.2
+        ]}
+      >
+        <torusGeometry
+          args={[
+            2.62,
+            0.0025,
+            6,
+            64
+          ]}
+        />
+
+        <meshBasicMaterial
+          color="#dce9e1"
+          transparent
+          opacity={0.065}
+          depthWrite={false}
+        />
+      </mesh>
+
+      {/* =================================================
+          ORBITING OBJECT
+      ================================================= */}
+
+      <mesh position={[2.12, 0, 0]}>
+        <sphereGeometry
+          args={[0.035, 10, 10]}
+        />
+
         <meshBasicMaterial
           color="#ffffff"
-          transparent
-          opacity={0.75}
         />
       </mesh>
 
-      {/* Orbit */}
-     <mesh
-  ref={orbit1}
-  rotation={[Math.PI / 2.8, 0.3, 0]}
->
-        <torusGeometry args={[2.15, 0.008, 8, 256]} />
+      {/* =================================================
+          SECOND ORBITING OBJECT
+      ================================================= */}
+
+      <mesh position={[-1.65, 0.45, 0]}>
+        <sphereGeometry
+          args={[0.018, 8, 8]}
+        />
+
         <meshBasicMaterial
-          color="#ffffff"
+          color="#eaf4ee"
           transparent
-          opacity={0.28}
+          opacity={0.8}
         />
       </mesh>
 
-    <mesh
-  ref={orbit2}
-  rotation={[1.1, 0.8, 0.4]}
->
-        <torusGeometry args={[2.35, 0.005, 8, 256]} />
-        <meshBasicMaterial
-          color="#ffffff"
-          transparent
-          opacity={0.16}
-        />
-      </mesh>
-
-
-
-  <mesh
-  ref={orbit3}
-  rotation={[0.4, -0.8, 1.2]}
->
-  <torusGeometry args={[2.65, 0.003, 8, 256]} />
-
-  <meshBasicMaterial
-    color="#dfe8e2"
-    transparent
-    opacity={0.10}
-  />
-</mesh>  
-
-      {/* Small orbiting point */}
-      <mesh position={[2.15, 0, 0]}>
-        <sphereGeometry args={[0.045, 16, 16]} />
-        <meshBasicMaterial color="#ffffff" />
-      </mesh>
     </group>
   );
 }
 
+/* =========================================================
+   SCENE
+========================================================= */
+
 function Scene() {
   return (
     <>
-      <ambientLight intensity={0.15} />
+      {/* Ambient fill */}
 
-      <directionalLight
-        position={[4, 5, 6]}
-        intensity={2.5}
+      <ambientLight
+        intensity={0.12}
       />
 
-    <pointLight
-  position={[-4, -2, 3]}
-  intensity={4}
-  distance={10}
-/>
+      {/* Main directional light */}
 
-  <pointLight
-  position={[3, 2, -4]}
-  intensity={1.5}
-  distance={8}
-/> 
-<Particles/>
+      <directionalLight
+        position={[4, 4, 5]}
+        intensity={2.4}
+      />
 
-      <Sculpture />
+      {/* Cool side light */}
 
-      <Environment preset="studio" />
+      <pointLight
+        position={[-4, -1, 4]}
+        intensity={1.1}
+        distance={9}
+      />
+
+      {/* Very subtle rear light */}
+
+      <pointLight
+        position={[3, 2, -4]}
+        intensity={0.45}
+        distance={8}
+      />
+
+      <Particles />
+
+      <Planet />
     </>
   );
 }
 
+/* =========================================================
+   HERO WEBGL
+========================================================= */
+
 export default function HeroWebGL() {
-    const [ready, setReady] = useState(false);
+  const [ready, setReady] =
+    useState(false);
+
   return (
     <div
-  className={`absolute inset-0 z-[5] pointer-events-none transition-opacity duration-[1500ms] ${
-    ready ? "opacity-100" : "opacity-0"
-  }`}
->
+      className={`
+        absolute
+        inset-0
+        z-[5]
+        pointer-events-none
+        transition-opacity
+        duration-[1000ms]
+        ${
+          ready
+            ? "opacity-100"
+            : "opacity-0"
+        }
+      `}
+    >
       <Canvas
-  camera={{
-    position: [0, 0, 6],
-    fov: 42,
-  }}
-  onCreated={() => {
-    setTimeout(() => {
-      setReady(true);
-    }, 300);
-  }}
-  dpr={[1, 2]}
+        camera={{
+          position: [0, 0, 6],
+          fov: 42
+        }}
+
+        onCreated={() => {
+          setTimeout(() => {
+            setReady(true);
+          }, 200);
+        }}
+
+        dpr={1}
+
         gl={{
           antialias: true,
           alpha: true,
-          powerPreference: "high-performance",
+          powerPreference:
+            "high-performance",
+          stencil: false,
+          depth: true
         }}
+
+        frameloop="always"
       >
         <Scene />
       </Canvas>
