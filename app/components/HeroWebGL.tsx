@@ -53,6 +53,12 @@ const FresnelMaterial = shaderMaterial(
 
 extend({ FresnelMaterial });
 
+declare module "@react-three/fiber" {
+  interface ThreeElements {
+    fresnelMaterial: any;
+  }
+}
+
 function Particles() {
   const points = useRef<THREE.Points>(null);
 
@@ -80,12 +86,10 @@ function Particles() {
   return (
     <points ref={points}>
       <bufferGeometry>
-        <bufferAttribute
-          attach="attributes-position"
-          count={particleCount}
-          array={positions}
-          itemSize={3}
-        />
+  <bufferAttribute
+  attach="attributes-position"
+  args={[positions, 3]}
+/>
       </bufferGeometry>
 
       <pointsMaterial
@@ -181,15 +185,7 @@ if (orbit3.current) {
   />
 </mesh>
 
-<mesh scale={1.08}>
-  <sphereGeometry args={[1.7, 64, 64]} />
-  <meshBasicMaterial
-    color="#c8d8ce"
-    transparent
-    opacity={0.055}
-    side={THREE.BackSide}
-  />
-</mesh>
+
 
 
       {/* Inner form */}
@@ -243,15 +239,7 @@ if (orbit3.current) {
         />
       </mesh>
 
-     <mesh rotation={[0.4, -0.8, 1.2]}>
-  <torusGeometry args={[2.65, 0.003, 8, 256]} />
-  <meshBasicMaterial
-    color="#dfe8e2"
-    transparent
-    opacity={0.10}
-  />
-</mesh>
-     
+
 
   <mesh
   ref={orbit3}
