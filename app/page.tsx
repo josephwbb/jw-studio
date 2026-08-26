@@ -3,7 +3,7 @@
 import { Cormorant_Garamond, Plus_Jakarta_Sans } from "next/font/google";
 import { useEffect, useRef, useState } from "react";
 
-import HeroWebGL from "./components/HeroWebGL";
+import dynamic from "next/dynamic";
 
 const sans = Plus_Jakarta_Sans({
   subsets: ["latin"],
@@ -15,6 +15,13 @@ const serif = Cormorant_Garamond({
   weight: ["300", "400", "500", "600"],
   style: ["normal", "italic"],
 });
+
+const HeroWebGL = dynamic(
+  () => import("./components/HeroWebGL"),
+  {
+    ssr: false,
+  }
+);
 
 const projects = [
   {
@@ -53,7 +60,26 @@ export default function Home() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [scrollY, setScrollY] = useState(0);
 
+const [showWebGL, setShowWebGL] = useState(false);
+
+
   useEffect(() => {
+   
+     const startWebGL = () => {
+    setShowWebGL(true);
+  };
+
+  let idleId: number | undefined;
+  let fallbackTimer: ReturnType<typeof setTimeout> | undefined;
+
+  if ("requestIdleCallback" in window) {
+    idleId = window.requestIdleCallback(startWebGL, {
+      timeout: 2500,
+    });
+  } else {
+    fallbackTimer = setTimeout(startWebGL, 1800);
+  }
+   
     let animationFrame = 0;
 
     const handleMouseMove = (event: MouseEvent) => {
@@ -495,7 +521,7 @@ export default function Home() {
           }}
         />
 
-      {/* <HeroWebGL /> */}
+{showWebGL && <HeroWebGL />}
 
         {/* ---------------------------------------------------------
             HERO CONTENT
