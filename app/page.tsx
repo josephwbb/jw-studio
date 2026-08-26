@@ -495,7 +495,7 @@ export default function Home() {
           }}
         />
 
-      <HeroWebGL />
+      {/* <HeroWebGL /> */}
 
         {/* ---------------------------------------------------------
             HERO CONTENT
