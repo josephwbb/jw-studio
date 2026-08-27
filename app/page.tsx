@@ -91,20 +91,13 @@ export default function Home() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [showWebGL, setShowWebGL] = useState(false);
   const [isDesktop, setIsDesktop] = useState(false);
-  const [isAssembled, setIsAssembled] = useState(false);
+  
+  // Single-run state machine
+  const [revealStage, setRevealStage] = useState<"init" | "webgl" | "typography" | "nav" | "complete">("init");
+  const splashDoneRef = useRef(false);
 
   const mouseTarget = useRef({ x: 0, y: 0 });
   const mouseCurrent = useRef({ x: 0, y: 0 });
-
-  useEffect(() => {
-    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    if (reduceMotion) {
-      setIsAssembled(true);
-      return;
-    }
-    const assemblyTimer = window.setTimeout(() => setIsAssembled(true), 60);
-    return () => window.clearTimeout(assemblyTimer);
-  }, []);
 
   useEffect(() => {
     const startWebGL = () => {
@@ -122,9 +115,7 @@ export default function Home() {
       fallbackTimer = setTimeout(startWebGL, 1800);
     }
 
-    const mediaQuery = window.matchMedia(
-      "(hover: hover) and (pointer: fine)"
-    );
+    const mediaQuery = window.matchMedia("(hover: hover) and (pointer: fine)");
 
     const updateDevice = () => {
       setIsDesktop(mediaQuery.matches);
@@ -182,27 +173,26 @@ export default function Home() {
     };
   }, []);
 
+  // Integrated Ink Splash & Single Impact Engine
   useEffect(() => {
-    if (!isDesktop) return;
-
     const canvas = inkCanvasRef.current;
     if (!canvas) return;
 
     const context = canvas.getContext("2d");
     if (!context) return;
 
-    const reducedMotion = window.matchMedia(
-      "(prefers-reduced-motion: reduce)"
-    ).matches;
-
-    if (reducedMotion) return;
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reducedMotion) {
+      splashDoneRef.current = true;
+      setRevealStage("complete");
+      return;
+    }
 
     let width = window.innerWidth;
     let height = window.innerHeight;
     let pixelRatio = Math.min(window.devicePixelRatio || 1, 1.5);
 
     let frame = 0;
-
     const points: InkPoint[] = [];
     const particles: CursorParticle[] = [];
 
@@ -215,8 +205,15 @@ export default function Home() {
     let velocityX = 0;
     let velocityY = 0;
     let speed = 0;
-
     let time = 0;
+
+    // Strict single-run splash state
+    let splashPhase: "falling" | "impacting" | "expanding" | "done" = splashDoneRef.current ? "done" : "falling";
+    let dropY = -60;
+    let dropTargetY = height / 2;
+    let dropVelocity = 0;
+    let splashRadius = 0;
+    let maxSplashRadius = Math.max(width, height) * 0.9;
 
     const resize = () => {
       width = window.innerWidth;
@@ -230,11 +227,17 @@ export default function Home() {
       canvas.style.height = `${height}px`;
 
       context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+      maxSplashRadius = Math.max(width, height) * 0.9;
+      if (splashPhase !== "done") {
+        dropTargetY = height / 2;
+      }
     };
 
     resize();
 
     const handlePointerMove = (event: PointerEvent) => {
+      if (splashPhase !== "done") return;
+
       const nextX = event.clientX;
       const nextY = event.clientY;
 
@@ -248,7 +251,6 @@ export default function Home() {
       pointerY = nextY;
 
       const distance = Math.sqrt(dx * dx + dy * dy);
-
       speed += (distance - speed) * 0.35;
 
       if (distance < 1.5) return;
@@ -265,20 +267,13 @@ export default function Home() {
           x,
           y,
           life: 1,
-          size:
-            0.7 +
-            Math.random() * 0.8 +
-            Math.min(speed * 0.025, 1.5),
+          size: 0.7 + Math.random() * 0.8 + Math.min(speed * 0.025, 1.5),
           angle: Math.random() * Math.PI * 2,
           drift: 0.4 + Math.random() * 1.1,
           hue: Math.random() > 0.72 ? 150 : 135,
         });
 
-        if (
-          Math.random() < 0.18 &&
-          particles.length < 45 &&
-          speed > 2
-        ) {
+        if (Math.random() < 0.18 && particles.length < 45 && speed > 2) {
           const angle = Math.atan2(dy, dx);
           const side = Math.random() > 0.5 ? 1 : -1;
           const spread = (Math.random() * 0.7 + 0.25) * side;
@@ -286,17 +281,12 @@ export default function Home() {
           particles.push({
             x,
             y,
-            vx:
-              -Math.cos(angle) * (0.15 + Math.random() * 0.7) +
-              Math.cos(angle + Math.PI / 2) * spread,
-            vy:
-              -Math.sin(angle) * (0.15 + Math.random() * 0.7) +
-              Math.sin(angle + Math.PI / 2) * spread,
+            vx: -Math.cos(angle) * (0.15 + Math.random() * 0.7) + Math.cos(angle + Math.PI / 2) * spread,
+            vy: -Math.sin(angle) * (0.15 + Math.random() * 0.7) + Math.sin(angle + Math.PI / 2) * spread,
             life: 1,
             size: 0.6 + Math.random() * 1.5,
             rotation: Math.random() * Math.PI * 2,
-            rotationSpeed:
-              (Math.random() - 0.5) * 0.08,
+            rotationSpeed: (Math.random() - 0.5) * 0.08,
           });
         }
       }
@@ -309,79 +299,58 @@ export default function Home() {
       }
     };
 
-    window.addEventListener("pointermove", handlePointerMove, {
-      passive: true,
-    });
+    window.addEventListener("pointermove", handlePointerMove, { passive: true });
 
-    const drawGlow = (
-      x: number,
-      y: number,
-      radius: number,
-      opacity: number,
-      hue: number
-    ) => {
-      const gradient = context.createRadialGradient(
-        x,
-        y,
-        0,
-        x,
-        y,
-        radius
-      );
-
-      gradient.addColorStop(
-        0,
-        `hsla(${hue}, 30%, 82%, ${opacity})`
-      );
-
-      gradient.addColorStop(
-        0.18,
-        `hsla(${hue}, 30%, 72%, ${opacity * 0.45})`
-      );
-
-      gradient.addColorStop(
-        0.5,
-        `hsla(${hue}, 30%, 62%, ${opacity * 0.12})`
-      );
-
+    const drawGlow = (x: number, y: number, radius: number, opacity: number, hue: number) => {
+      const gradient = context.createRadialGradient(x, y, 0, x, y, radius);
+      gradient.addColorStop(0, `hsla(${hue}, 30%, 82%, ${opacity})`);
+      gradient.addColorStop(0.18, `hsla(${hue}, 30%, 72%, ${opacity * 0.45})`);
+      gradient.addColorStop(0.5, `hsla(${hue}, 30%, 62%, ${opacity * 0.12})`);
       gradient.addColorStop(1, "transparent");
 
       context.fillStyle = gradient;
-
       context.beginPath();
       context.arc(x, y, radius, 0, Math.PI * 2);
       context.fill();
     };
 
-    const drawRibbon = (
-      offset: number,
-      widthMultiplier: number,
-      opacityMultiplier: number,
-      phase: number
-    ) => {
+    const triggerImpactRipples = () => {
+      const rayCount = 32;
+      const centerX = width / 2;
+      const centerY = height / 2;
+
+      for (let i = 0; i < rayCount; i++) {
+        const angle = (i / rayCount) * Math.PI * 2 + (Math.random() - 0.5) * 0.2;
+        const raySpeed = 4 + Math.random() * 6;
+
+        particles.push({
+          x: centerX,
+          y: centerY,
+          vx: Math.cos(angle) * raySpeed,
+          vy: Math.sin(angle) * raySpeed,
+          life: 1,
+          size: 1.5 + Math.random() * 2.5,
+          rotation: Math.random() * Math.PI * 2,
+          rotationSpeed: (Math.random() - 0.5) * 0.1,
+        });
+      }
+    };
+
+    const drawRibbon = (offset: number, widthMultiplier: number, opacityMultiplier: number, phase: number) => {
       if (points.length < 3) return;
 
       context.beginPath();
-
-      const visiblePoints = points.slice(
-        Math.max(0, points.length - 75)
-      );
+      const visiblePoints = points.slice(Math.max(0, points.length - 75));
 
       for (let i = 0; i < visiblePoints.length; i++) {
         const point = visiblePoints[i];
-
         const progress = i / Math.max(visiblePoints.length - 1, 1);
 
-        const wave =
-          Math.sin(time * 0.003 + i * 0.34 + phase) *
-          (3 + progress * 6);
-
+        const wave = Math.sin(time * 0.003 + i * 0.34 + phase) * (3 + progress * 6);
         const angle = point.angle + time * 0.0003;
 
-        const offsetX =
-          Math.cos(angle) * (offset + wave);
-        const offsetY =
-          Math.sin(angle) * (offset + wave);
+        const offsetX = Math.cos(angle) * (offset + wave);
+        const offsetY = Math.sin(angle) * (offset + wave);
 
         const x = point.x + offsetX;
         const y = point.y + offsetY;
@@ -390,37 +359,16 @@ export default function Home() {
           context.moveTo(x, y);
         } else {
           const previous = visiblePoints[i - 1];
+          const previousWave = Math.sin(time * 0.003 + (i - 1) * 0.34 + phase) * (3 + progress * 6);
+          const previousAngle = previous.angle + time * 0.0003;
 
-          const previousWave =
-            Math.sin(
-              time * 0.003 +
-                (i - 1) * 0.34 +
-                phase
-            ) *
-            (3 + progress * 6);
-
-          const previousAngle =
-            previous.angle + time * 0.0003;
-
-          const previousX =
-            previous.x +
-            Math.cos(previousAngle) *
-              (offset + previousWave);
-
-          const previousY =
-            previous.y +
-            Math.sin(previousAngle) *
-              (offset + previousWave);
+          const previousX = previous.x + Math.cos(previousAngle) * (offset + previousWave);
+          const previousY = previous.y + Math.sin(previousAngle) * (offset + previousWave);
 
           const midpointX = (previousX + x) / 2;
           const midpointY = (previousY + y) / 2;
 
-          context.quadraticCurveTo(
-            previousX,
-            previousY,
-            midpointX,
-            midpointY
-          );
+          context.quadraticCurveTo(previousX, previousY, midpointX, midpointY);
         }
       }
 
@@ -431,29 +379,13 @@ export default function Home() {
         pointerY + 180
       );
 
-      gradient.addColorStop(
-        0,
-        `hsla(135, 28%, 82%, 0)`
-      );
-
-      gradient.addColorStop(
-        0.5,
-        `hsla(150, 35%, 84%, ${0.045 * opacityMultiplier})`
-      );
-
-      gradient.addColorStop(
-        0.75,
-        `hsla(175, 40%, 78%, ${0.11 * opacityMultiplier})`
-      );
-
-      gradient.addColorStop(
-        1,
-        `hsla(125, 30%, 80%, 0)`
-      );
+      gradient.addColorStop(0, `hsla(135, 28%, 82%, 0)`);
+      gradient.addColorStop(0.5, `hsla(150, 35%, 84%, ${0.045 * opacityMultiplier})`);
+      gradient.addColorStop(0.75, `hsla(175, 40%, 78%, ${0.11 * opacityMultiplier})`);
+      gradient.addColorStop(1, `hsla(125, 30%, 80%, 0)`);
 
       context.strokeStyle = gradient;
-      context.lineWidth =
-        (1.8 + speed * 0.025) * widthMultiplier;
+      context.lineWidth = (1.8 + speed * 0.025) * widthMultiplier;
       context.lineCap = "round";
       context.lineJoin = "round";
       context.stroke();
@@ -461,27 +393,72 @@ export default function Home() {
 
     const draw = () => {
       time += 16;
-
       context.clearRect(0, 0, width, height);
 
+      // --- SINGLE DROP & EXPAND ENGINE ---
+      if (splashPhase !== "done") {
+        const centerX = width / 2;
+
+        if (splashPhase === "falling") {
+          dropVelocity += 0.9;
+          dropY += dropVelocity;
+
+          drawGlow(centerX, dropY, 20, 0.95, 145);
+          drawGlow(centerX, dropY - dropVelocity * 2, 8, 0.4, 160);
+
+          if (dropY >= dropTargetY) {
+            splashPhase = "impacting";
+            triggerImpactRipples();
+            setRevealStage("webgl");
+          }
+        } else if (splashPhase === "impacting" || splashPhase === "expanding") {
+          if (splashPhase === "impacting") {
+            splashPhase = "expanding";
+          }
+
+          splashRadius += (maxSplashRadius - splashRadius) * 0.048;
+
+          context.save();
+          context.globalCompositeOperation = "screen";
+
+          for (let r = 1; r <= 3; r++) {
+            const currentR = Math.max(0, splashRadius - r * 35);
+            const opacity = Math.max(0, (1 - currentR / maxSplashRadius) * 0.35);
+
+            context.beginPath();
+            context.arc(centerX, dropTargetY, currentR, 0, Math.PI * 2);
+            context.strokeStyle = `rgba(180, 220, 200, ${opacity})`;
+            context.lineWidth = 6 / r;
+            context.stroke();
+          }
+
+          drawGlow(centerX, dropTargetY, splashRadius * 0.4, 0.15 * (1 - splashRadius / maxSplashRadius), 150);
+          context.restore();
+
+          if (splashRadius > maxSplashRadius * 0.25) {
+            setRevealStage("typography");
+          }
+          if (splashRadius > maxSplashRadius * 0.65) {
+            setRevealStage("nav");
+          }
+          if (splashRadius >= maxSplashRadius * 0.92) {
+            splashPhase = "done";
+            splashDoneRef.current = true; // Permanently lock splash as complete
+            setRevealStage("complete");
+          }
+        }
+      }
+
+      // --- INTERACTIVE MOUSE INK ENGINE ---
       velocityX *= 0.92;
       velocityY *= 0.92;
       speed *= 0.94;
 
       for (let i = points.length - 1; i >= 0; i--) {
         const point = points[i];
-
         point.life -= 0.0105;
-
-        point.x +=
-          Math.cos(point.angle + time * 0.001) *
-          point.drift *
-          0.035;
-
-        point.y +=
-          Math.sin(point.angle + time * 0.0013) *
-          point.drift *
-          0.035;
+        point.x += Math.cos(point.angle + time * 0.001) * point.drift * 0.035;
+        point.y += Math.sin(point.angle + time * 0.0013) * point.drift * 0.035;
 
         if (point.life <= 0) {
           points.splice(i, 1);
@@ -490,15 +467,11 @@ export default function Home() {
 
       for (let i = particles.length - 1; i >= 0; i--) {
         const particle = particles[i];
-
         particle.life -= 0.018;
-
         particle.x += particle.vx;
         particle.y += particle.vy;
-
         particle.vx *= 0.975;
         particle.vy *= 0.975;
-
         particle.rotation += particle.rotationSpeed;
 
         if (particle.life <= 0) {
@@ -506,232 +479,83 @@ export default function Home() {
         }
       }
 
-      context.save();
-      context.globalCompositeOperation = "screen";
-
-      const atmosphericRadius =
-        45 + Math.min(speed * 2.2, 75);
-
-      drawGlow(
-        pointerX,
-        pointerY,
-        atmosphericRadius,
-        0.07,
-        145
-      );
-
-      drawGlow(
-        pointerX - velocityX * 3.5,
-        pointerY - velocityY * 3.5,
-        atmosphericRadius * 1.8,
-        0.025,
-        165
-      );
-
-      drawRibbon(0, 2.8, 1, 0);
-      drawRibbon(5, 1.8, 0.75, 1.7);
-      drawRibbon(-5, 1.4, 0.55, 3.1);
-
-      if (points.length > 4) {
-        const sampleStep = Math.max(
-          1,
-          Math.floor(points.length / 20)
-        );
-
-        for (
-          let i = 0;
-          i < points.length;
-          i += sampleStep
-        ) {
-          const point = points[i];
-
-          const progress = i / points.length;
-
-          const blobOpacity =
-            point.life *
-            progress *
-            0.035;
-
-          if (blobOpacity <= 0) continue;
-
-          const blobSize =
-            point.size *
-            (7 + Math.sin(i * 0.7 + time * 0.002) * 2);
-
-          drawGlow(
-            point.x,
-            point.y,
-            blobSize,
-            blobOpacity,
-            point.hue
-          );
-        }
-      }
-
-      for (const particle of particles) {
-        const alpha =
-          Math.sin(
-            Math.max(0, particle.life) * Math.PI
-          ) * 0.4;
-
+      if (isDesktop && splashPhase === "done") {
         context.save();
+        context.globalCompositeOperation = "screen";
 
-        context.translate(
-          particle.x,
-          particle.y
-        );
+        const atmosphericRadius = 45 + Math.min(speed * 2.2, 75);
+        drawGlow(pointerX, pointerY, atmosphericRadius, 0.07, 145);
+        drawGlow(pointerX - velocityX * 3.5, pointerY - velocityY * 3.5, atmosphericRadius * 1.8, 0.025, 165);
 
-        context.rotate(particle.rotation);
+        drawRibbon(0, 2.8, 1, 0);
+        drawRibbon(5, 1.8, 0.75, 1.7);
+        drawRibbon(-5, 1.4, 0.55, 3.1);
 
-        context.globalAlpha = alpha;
+        if (points.length > 4) {
+          const sampleStep = Math.max(1, Math.floor(points.length / 20));
+          for (let i = 0; i < points.length; i += sampleStep) {
+            const point = points[i];
+            const progress = i / points.length;
+            const blobOpacity = point.life * progress * 0.035;
+            if (blobOpacity <= 0) continue;
 
-        const fragmentGradient =
-          context.createLinearGradient(
-            -particle.size * 3,
-            0,
-            particle.size * 3,
-            0
-          );
+            const blobSize = point.size * (7 + Math.sin(i * 0.7 + time * 0.002) * 2);
+            drawGlow(point.x, point.y, blobSize, blobOpacity, point.hue);
+          }
+        }
 
-        fragmentGradient.addColorStop(
-          0,
-          "rgba(220,235,225,0)"
-        );
+        context.globalCompositeOperation = "source-over";
 
-        fragmentGradient.addColorStop(
-          0.5,
-          "rgba(220,235,225,0.8)"
-        );
+        const revealRadius = 20 + Math.min(speed * 1.5, 45);
+        const revealGradient = context.createRadialGradient(pointerX, pointerY, 0, pointerX, pointerY, revealRadius);
+        revealGradient.addColorStop(0, "rgba(190, 220, 204, 0.10)");
+        revealGradient.addColorStop(0.25, "rgba(125, 185, 155, 0.045)");
+        revealGradient.addColorStop(0.6, "rgba(80, 145, 115, 0.018)");
+        revealGradient.addColorStop(1, "rgba(0,0,0,0)");
 
-        fragmentGradient.addColorStop(
-          1,
-          "rgba(160,210,190,0)"
-        );
+        context.fillStyle = revealGradient;
+        context.beginPath();
+        context.arc(pointerX, pointerY, revealRadius, 0, Math.PI * 2);
+        context.fill();
 
-        context.fillStyle = fragmentGradient;
+        const pulse = 1 + Math.sin(time * 0.006) * 0.12;
+        const innerRadius = (7.5 + Math.min(speed * 0.18, 3)) * pulse;
 
-        context.fillRect(
-          -particle.size * 3,
-          -particle.size * 0.5,
-          particle.size * 6,
-          particle.size
-        );
+        const innerGradient = context.createRadialGradient(pointerX, pointerY, 0, pointerX, pointerY, innerRadius * 2.5);
+        innerGradient.addColorStop(0, "rgba(250, 250, 245, 0.95)");
+        innerGradient.addColorStop(0.2, "rgba(225, 240, 230, 0.72)");
+        innerGradient.addColorStop(0.5, "rgba(180, 220, 195, 0.18)");
+        innerGradient.addColorStop(1, "rgba(180, 220, 195, 0)");
+
+        context.fillStyle = innerGradient;
+        context.beginPath();
+        context.arc(pointerX, pointerY, innerRadius * 2.5, 0, Math.PI * 2);
+        context.fill();
+
+        context.fillStyle = "rgba(248, 248, 242, 0.96)";
+        context.beginPath();
+        context.arc(pointerX, pointerY, 2.15, 0, Math.PI * 2);
+        context.fill();
 
         context.restore();
       }
 
-      context.globalCompositeOperation =
-        "source-over";
+      for (const particle of particles) {
+        const alpha = Math.sin(Math.max(0, particle.life) * Math.PI) * 0.55;
+        context.save();
+        context.translate(particle.x, particle.y);
+        context.rotate(particle.rotation);
+        context.globalAlpha = alpha;
 
-      const revealRadius =
-        20 + Math.min(speed * 1.5, 45);
+        const fragmentGradient = context.createLinearGradient(-particle.size * 3, 0, particle.size * 3, 0);
+        fragmentGradient.addColorStop(0, "rgba(220,235,225,0)");
+        fragmentGradient.addColorStop(0.5, "rgba(220,235,225,0.85)");
+        fragmentGradient.addColorStop(1, "rgba(160,210,190,0)");
 
-      const revealGradient =
-        context.createRadialGradient(
-          pointerX,
-          pointerY,
-          0,
-          pointerX,
-          pointerY,
-          revealRadius
-        );
-
-      revealGradient.addColorStop(
-        0,
-        "rgba(190, 220, 204, 0.10)"
-      );
-
-      revealGradient.addColorStop(
-        0.25,
-        "rgba(125, 185, 155, 0.045)"
-      );
-
-      revealGradient.addColorStop(
-        0.6,
-        "rgba(80, 145, 115, 0.018)"
-      );
-
-      revealGradient.addColorStop(
-        1,
-        "rgba(0,0,0,0)"
-      );
-
-      context.fillStyle = revealGradient;
-
-      context.beginPath();
-      context.arc(
-        pointerX,
-        pointerY,
-        revealRadius,
-        0,
-        Math.PI * 2
-      );
-      context.fill();
-
-      const pulse =
-        1 +
-        Math.sin(time * 0.006) * 0.12;
-
-      const innerRadius =
-        (7.5 + Math.min(speed * 0.18, 3)) *
-        pulse;
-
-      const innerGradient =
-        context.createRadialGradient(
-          pointerX,
-          pointerY,
-          0,
-          pointerX,
-          pointerY,
-          innerRadius * 2.5
-        );
-
-      innerGradient.addColorStop(
-        0,
-        "rgba(250, 250, 245, 0.95)"
-      );
-
-      innerGradient.addColorStop(
-        0.2,
-        "rgba(225, 240, 230, 0.72)"
-      );
-
-      innerGradient.addColorStop(
-        0.5,
-        "rgba(180, 220, 195, 0.18)"
-      );
-
-      innerGradient.addColorStop(
-        1,
-        "rgba(180, 220, 195, 0)"
-      );
-
-      context.fillStyle = innerGradient;
-
-      context.beginPath();
-      context.arc(
-        pointerX,
-        pointerY,
-        innerRadius * 2.5,
-        0,
-        Math.PI * 2
-      );
-      context.fill();
-
-      context.fillStyle =
-        "rgba(248, 248, 242, 0.96)";
-
-      context.beginPath();
-      context.arc(
-        pointerX,
-        pointerY,
-        2.15,
-        0,
-        Math.PI * 2
-      );
-      context.fill();
-
-      context.restore();
+        context.fillStyle = fragmentGradient;
+        context.fillRect(-particle.size * 3, -particle.size * 0.5, particle.size * 6, particle.size);
+        context.restore();
+      }
 
       frame = requestAnimationFrame(draw);
     };
@@ -746,24 +570,14 @@ export default function Home() {
 
     return () => {
       cancelAnimationFrame(frame);
-
-      window.removeEventListener(
-        "pointermove",
-        handlePointerMove
-      );
-
-      window.removeEventListener(
-        "resize",
-        handleResize
-      );
-
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("resize", handleResize);
       context.clearRect(0, 0, width, height);
     };
   }, [isDesktop]);
 
   useEffect(() => {
     document.body.style.overflow = menuOpen ? "hidden" : "";
-
     return () => {
       document.body.style.overflow = "";
     };
@@ -775,10 +589,12 @@ export default function Home() {
   const lightX = mouse.normalizedX * 70;
   const lightY = mouse.normalizedY * 70;
 
+  const isNavVisible = revealStage === "nav" || revealStage === "complete";
+  const isTypographyVisible = revealStage === "typography" || revealStage === "nav" || revealStage === "complete";
+  const isWebGLVisible = revealStage === "webgl" || revealStage === "typography" || revealStage === "nav" || revealStage === "complete";
+
   return (
-    <main
-      className={`${sans.className} min-h-screen overflow-x-hidden bg-[#080808] text-[#f2f0eb]`}
-    >
+    <main className={`${sans.className} min-h-screen overflow-x-hidden bg-[#080808] text-[#f2f0eb]`}>
       <style jsx global>{`
         html {
           scroll-behavior: smooth;
@@ -823,16 +639,6 @@ export default function Home() {
         .project-card:hover .project-image {
           transform: scale(1.055);
           filter: saturate(1.08);
-        }
-
-        .magnetic {
-          transition:
-            transform 500ms cubic-bezier(0.16, 1, 0.3, 1),
-            background-color 300ms ease;
-        }
-
-        .magnetic:hover {
-          transform: translateY(-3px);
         }
 
         .ink-canvas {
@@ -972,39 +778,32 @@ export default function Home() {
           transform: translate(-4px, -50%);
         }
 
-        /* ---------------------------------------------------------
-           DYNAMIC ASYMMETRIC BURST ANIMATION
-        --------------------------------------------------------- */
-        .burst-item {
+        /* HARD-CODED ZERO OPACITY AT CSS LAYER TO PREVENT FLASH */
+        .reveal-item {
           opacity: 0;
           will-change: transform, opacity, filter;
-          transition: 
-            opacity 1500ms cubic-bezier(0.14, 1, 0.2, 1),
-            transform 1800ms cubic-bezier(0.14, 1, 0.2, 1),
-            filter 1500ms ease;
+          transition:
+            opacity 1200ms cubic-bezier(0.16, 1, 0.3, 1),
+            transform 1400ms cubic-bezier(0.16, 1, 0.3, 1),
+            filter 1200ms ease;
         }
 
-        /* Initial explosion origin points from screen center */
-        .burst-nav { transform: translate(0, -80px) scale(0.85); filter: blur(6px); }
-        .burst-jw { transform: translate(-45vw, -30vh) scale(0.1) rotate(-18deg); filter: blur(25px); }
-        .burst-studio { transform: translate(45vw, 35vh) scale(0.15) rotate(14deg); filter: blur(25px); }
-        .burst-tag { transform: translate(-20vw, 40px) scale(0.4); filter: blur(14px); }
-        .burst-scroll { transform: translate(30vw, 80px) scale(0.3); filter: blur(8px); }
-        .burst-webgl { transform: translate(-50%, -50%) scale(0.05); filter: blur(30px); }
-        .burst-atmosphere { transform: translate(-50%, -50%) scale(0.01); }
+        .reveal-nav { transform: translateY(-35px); filter: blur(8px); }
+        .reveal-jw { transform: translateX(-6vw) scale(0.96); filter: blur(16px); }
+        .reveal-studio { transform: translateX(6vw) scale(0.96); filter: blur(16px); }
+        .reveal-tag { transform: translateY(20px); filter: blur(8px); }
+        .reveal-webgl { transform: translate(-50%, -50%) scale(0.85); filter: blur(25px); }
 
-        .burst-item.is-assembled {
-          opacity: 1;
-          filter: blur(0px);
+        .reveal-item.is-revealed {
+          opacity: 1 !important;
+          filter: blur(0px) !important;
         }
 
-        .burst-nav.is-assembled { transform: translate(0, 0) scale(1); transition-delay: 50ms; }
-        .burst-jw.is-assembled { transform: translate(0, 0) scale(1) rotate(0deg); transition-delay: 140ms; }
-        .burst-studio.is-assembled { transform: translate(0, 0) scale(1) rotate(0deg); transition-delay: 280ms; }
-        .burst-tag.is-assembled { transform: translate(0, 0) scale(1); transition-delay: 420ms; }
-        .burst-scroll.is-assembled { transform: translate(0, 0) scale(1); transition-delay: 560ms; }
-        .burst-webgl.is-assembled { transform: translate(-50%, -50%) scale(1); transition-delay: 100ms; }
-        .burst-atmosphere.is-assembled { opacity: 0.4; transform: translate(-50%, -50%) scale(1); transition-delay: 0ms; }
+        .reveal-nav.is-revealed { transform: translateY(0); }
+        .reveal-jw.is-revealed { transform: translateX(0) scale(1); }
+        .reveal-studio.is-revealed { transform: translateX(0) scale(1); }
+        .reveal-tag.is-revealed { transform: translateY(0); }
+        .reveal-webgl.is-revealed { transform: translate(-50%, -50%) scale(1); }
 
         @media (max-width: 640px) {
           .menu-control {
@@ -1031,50 +830,24 @@ export default function Home() {
             inset: 5px;
           }
         }
-
-        @media (prefers-reduced-motion: reduce) {
-          *,
-          *::before,
-          *::after {
-            animation-duration: 0.01ms !important;
-            animation-iteration-count: 1 !important;
-            scroll-behavior: auto !important;
-            transition-duration: 0.01ms !important;
-          }
-        }
-
-        @media (hover: none), (pointer: coarse) {
-          .ink-canvas {
-            display: none !important;
-          }
-
-          body {
-            cursor: auto;
-          }
-        }
       `}</style>
 
-      {/* GLOBAL NOISE */}
+      {/* NOISE OVERLAY */}
       <div className="noise pointer-events-none fixed inset-0 z-[100] opacity-[0.025]" />
 
-      {/* EXPERIMENTAL CURSOR */}
-      {isDesktop && (
-        <canvas
-          ref={inkCanvasRef}
-          className="ink-canvas"
-          aria-hidden="true"
-        />
-      )}
+      {/* FLUID CANVAS */}
+      <canvas
+        ref={inkCanvasRef}
+        className="ink-canvas"
+        aria-hidden="true"
+      />
 
-      {/* =========================================================
-          NAVIGATION
-      ========================================================= */}
-
-      <header className={`fixed left-0 right-0 top-0 z-[80] flex items-center justify-between px-5 py-5 mix-blend-difference sm:px-6 sm:py-6 md:px-10 md:py-8 burst-item burst-nav ${isAssembled ? "is-assembled" : ""}`} >
-        <a
-          href="#"
-          className="relative z-10 text-sm font-semibold tracking-[-0.04em]"
-        >
+      {/* NAVIGATION */}
+      <header 
+        style={{ opacity: isNavVisible ? 1 : 0 }} 
+        className={`fixed left-0 right-0 top-0 z-[80] flex items-center justify-between px-5 py-5 mix-blend-difference sm:px-6 sm:py-6 md:px-10 md:py-8 reveal-item reveal-nav ${isNavVisible ? "is-revealed" : ""}`}
+      >
+        <a href="#" className="relative z-10 text-sm font-semibold tracking-[-0.04em]">
           JW<span className="opacity-40">/</span>STUDIO
         </a>
 
@@ -1085,16 +858,10 @@ export default function Home() {
 
           <button
             type="button"
-            aria-label={
-              menuOpen
-                ? "Close navigation menu"
-                : "Open navigation menu"
-            }
+            aria-label={menuOpen ? "Close navigation menu" : "Open navigation menu"}
             aria-expanded={menuOpen}
             onClick={() => setMenuOpen((open) => !open)}
-            className={`menu-control ${
-              menuOpen ? "open" : ""
-            }`}
+            className={`menu-control ${menuOpen ? "open" : ""}`}
           >
             <span className="menu-control-inner">
               <span className="menu-line" />
@@ -1104,104 +871,61 @@ export default function Home() {
         </div>
       </header>
 
-      {/* =========================================================
-          MENU
-      ========================================================= */}
-
+      {/* MENU OVERLAY */}
       <div
         aria-hidden={!menuOpen}
         className={`fixed inset-0 z-[70] overflow-hidden bg-[#0b0b0b] transition-opacity duration-700 ${
-          menuOpen
-            ? "pointer-events-auto opacity-100"
-            : "pointer-events-none opacity-0"
+          menuOpen ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0"
         }`}
       >
         <div
           className={`absolute left-1/2 top-1/2 h-[75vw] w-[75vw] max-h-[900px] max-w-[900px] -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/[0.035] transition-transform duration-[1400ms] ease-[cubic-bezier(0.16,1,0.3,1)] ${
-            menuOpen
-              ? "scale-100 rotate-0"
-              : "scale-50 rotate-[-18deg]"
+            menuOpen ? "scale-100 rotate-0" : "scale-50 rotate-[-18deg]"
           }`}
         />
 
         <div
           className={`absolute left-1/2 top-1/2 h-[55vw] w-[55vw] max-h-[650px] max-w-[650px] -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/[0.04] transition-transform duration-[1600ms] ease-[cubic-bezier(0.16,1,0.3,1)] ${
-            menuOpen
-              ? "scale-100 rotate-0"
-              : "scale-50 rotate-[24deg]"
-          }`}
-        />
-
-        <div
-          className={`absolute left-1/2 top-1/2 h-[35vw] w-[35vw] max-h-[430px] max-w-[430px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-white/[0.015] blur-3xl transition-transform duration-[1800ms] ease-[cubic-bezier(0.16,1,0.3,1)] ${
-            menuOpen ? "scale-100" : "scale-0"
+            menuOpen ? "scale-100 rotate-0" : "scale-50 rotate-[24deg]"
           }`}
         />
 
         <nav className="relative z-10 flex h-full flex-col items-center justify-center gap-0">
-          {["Work", "Studio", "Services", "Contact"].map(
-            (item, index) => (
-              <a
-                key={item}
-                href={`#${item.toLowerCase()}`}
-                onClick={() => setMenuOpen(false)}
-                className={`group relative text-[clamp(3.2rem,11vw,8rem)] font-light leading-[0.9] tracking-[-0.07em] transition-all duration-[800ms] ease-[cubic-bezier(0.16,1,0.3,1)] hover:italic ${
-                  menuOpen
-                    ? "translate-y-0 opacity-100"
-                    : "translate-y-16 opacity-0"
-                }`}
-                style={{
-                  transitionDelay: `${index * 80 + 120}ms`,
-                }}
-              >
-                <span className="relative">
-                  {item}
-
-                  <span className="absolute -right-5 top-1/2 h-1.5 w-1.5 -translate-y-1/2 scale-0 rounded-full bg-white transition-transform duration-500 group-hover:scale-100" />
-                </span>
-              </a>
-            )
-          )}
+          {["Work", "Studio", "Services", "Contact"].map((item, index) => (
+            <a
+              key={item}
+              href={`#${item.toLowerCase()}`}
+              onClick={() => setMenuOpen(false)}
+              className={`group relative text-[clamp(3.2rem,11vw,8rem)] font-light leading-[0.9] tracking-[-0.07em] transition-all duration-[800ms] ease-[cubic-bezier(0.16,1,0.3,1)] hover:italic ${
+                menuOpen ? "translate-y-0 opacity-100" : "translate-y-16 opacity-0"
+              }`}
+              style={{
+                transitionDelay: `${index * 80 + 120}ms`,
+              }}
+            >
+              <span className="relative">
+                {item}
+                <span className="absolute -right-5 top-1/2 h-1.5 w-1.5 -translate-y-1/2 scale-0 rounded-full bg-white transition-transform duration-500 group-hover:scale-100" />
+              </span>
+            </a>
+          ))}
         </nav>
-
-        <div
-          className={`absolute bottom-7 left-5 text-[8px] uppercase tracking-[0.2em] text-white/30 transition-all duration-700 sm:left-6 md:bottom-8 md:left-10 ${
-            menuOpen
-              ? "translate-y-0 opacity-100"
-              : "translate-y-4 opacity-0"
-          }`}
-        >
-          Independent digital studio
-        </div>
-
-        <div
-          className={`absolute bottom-7 right-5 text-[8px] uppercase tracking-[0.2em] text-white/20 transition-all duration-700 sm:right-6 md:bottom-8 md:right-10 ${
-            menuOpen
-              ? "translate-y-0 opacity-100"
-              : "translate-y-4 opacity-0"
-          }`}
-        >
-          2026
-        </div>
       </div>
 
-      {/* =========================================================
-          HERO
-      ========================================================= */}
-
+      {/* HERO SECTION */}
       <section
         ref={heroRef}
         className="relative flex min-h-[100svh] flex-col justify-between overflow-hidden px-5 pb-10 pt-32 sm:px-6 sm:pb-12 sm:pt-36 md:min-h-screen md:px-10 md:pb-14"
       >
-        {/* ATMOSPHERIC LIGHT */}
         <div
-          className={`pointer-events-none absolute left-1/2 top-1/2 h-[86vw] w-[86vw] max-h-[900px] max-w-[900px] rounded-full blur-[90px] sm:blur-[110px] burst-item burst-atmosphere ${isAssembled ? "is-assembled" : ""}`}
+          className={`pointer-events-none absolute left-1/2 top-1/2 h-[86vw] w-[86vw] max-h-[900px] max-w-[900px] -translate-x-1/2 -translate-y-1/2 rounded-full blur-[90px] sm:blur-[110px] transition-opacity duration-1000 ${
+            isWebGLVisible ? "opacity-45" : "opacity-0"
+          }`}
           style={{
             background: `radial-gradient(circle at ${50 + mouse.normalizedX * 20}% ${50 + mouse.normalizedY * 20}%, rgba(150,180,160,0.20), rgba(100,120,110,0.06) 35%, transparent 70%)`,
           }}
         />
 
-        {/* Cursor light */}
         <div
           className="pointer-events-none absolute left-1/2 top-1/2 z-[2] h-[280px] w-[280px] -translate-x-1/2 -translate-y-1/2 rounded-full opacity-25 blur-[80px] transition-transform duration-700 ease-out sm:h-[400px] sm:w-[400px] sm:blur-[100px]"
           style={{
@@ -1210,13 +934,12 @@ export default function Home() {
           }}
         />
 
-        {/* WebGL */}
         {showWebGL && (
           <div
-            className={`pointer-events-none absolute left-1/2 top-1/2 z-[5] h-[49vh] w-[86vw] sm:h-[65vh] sm:w-[70vw] md:h-[75vh] md:w-[70vw] burst-item burst-webgl ${isAssembled ? "is-assembled" : ""}`}
-            style={{
-              transformStyle: "preserve-3d",
-            }}
+            style={{ opacity: isWebGLVisible ? 1 : 0 }}
+            className={`pointer-events-none absolute left-1/2 top-1/2 z-[5] h-[49vh] w-[86vw] sm:h-[65vh] sm:w-[70vw] md:h-[75vh] md:w-[70vw] reveal-item reveal-webgl ${
+              isWebGLVisible ? "is-revealed" : ""
+            }`}
           >
             <div
               style={{
@@ -1231,36 +954,44 @@ export default function Home() {
           </div>
         )}
 
-        {/* HERO CONTENT: EDITORIAL ASYMMETRIC GRID */}
+        {/* HERO TYPOGRAPHY */}
         <div className="relative z-20 my-auto flex flex-col items-start justify-center">
           <h1 className="select-none text-[22vw] font-light leading-[0.74] tracking-[-0.11em] sm:text-[20vw] md:text-[16.5vw]">
-            <span className={`block burst-item burst-jw ${isAssembled ? "is-assembled" : ""}`}>
+            <span 
+              style={{ opacity: isTypographyVisible ? 1 : 0 }}
+              className={`block reveal-item reveal-jw ${isTypographyVisible ? "is-revealed" : ""}`}
+            >
               JW
             </span>
-            <span className={`outline-text block ml-[12vw] sm:ml-[16vw] burst-item burst-studio ${isAssembled ? "is-assembled" : ""}`}>
+            <span 
+              style={{ opacity: isTypographyVisible ? 1 : 0 }}
+              className={`outline-text block ml-[12vw] sm:ml-[16vw] reveal-item reveal-studio ${isTypographyVisible ? "is-revealed" : ""}`}
+            >
               STUDIO
             </span>
           </h1>
 
-          <div className={`mt-8 flex items-center gap-4 sm:mt-12 sm:ml-[16vw] burst-item burst-tag ${isAssembled ? "is-assembled" : ""}`}>
+          <div 
+            style={{ opacity: isTypographyVisible ? 1 : 0 }}
+            className={`mt-8 flex items-center gap-4 sm:mt-12 sm:ml-[16vw] reveal-item reveal-tag ${isTypographyVisible ? "is-revealed" : ""}`}
+          >
             <span className="h-px w-8 bg-white/40 sm:w-12" />
-            <span className="text-xs uppercase tracking-[0.35em] text-white/60 sm:text-sm">
-              website designer
+            <span className="text-[10px] uppercase tracking-[0.4em] text-white/70 sm:text-xs">
+              Digital Craft &amp; Interactive Systems
             </span>
           </div>
         </div>
 
-        {/* Scroll marker */}
-        <div className={`absolute bottom-10 right-6 hidden items-center gap-3 text-[9px] uppercase tracking-[0.2em] text-white/30 md:flex burst-item burst-scroll ${isAssembled ? "is-assembled" : ""}`} >
+        <div 
+          style={{ opacity: isNavVisible ? 1 : 0 }}
+          className={`absolute bottom-10 right-6 hidden items-center gap-3 text-[9px] uppercase tracking-[0.2em] text-white/30 md:flex reveal-item ${isNavVisible ? "is-revealed" : ""}`}
+        >
           <span>Scroll</span>
           <span className="h-12 w-px bg-white/20" />
         </div>
       </section>
 
-      {/* =========================================================
-          INTRO
-      ========================================================= */}
-
+      {/* STUDIO INTRO */}
       <section
         id="studio"
         className="relative border-t border-white/10 px-5 py-24 sm:px-6 sm:py-32 md:px-10 md:py-48"
@@ -1275,26 +1006,19 @@ export default function Home() {
           <div className="md:col-span-7 md:col-start-6">
             <p className="text-[clamp(2.15rem,5vw,5rem)] font-light leading-[1.02] tracking-[-0.06em]">
               Websites should do more than{" "}
-              <span
-                className={`${serif.className} italic text-white/50`}
-              >
+              <span className={`${serif.className} italic text-white/50`}>
                 exist.
               </span>
             </p>
 
             <p className="mt-9 max-w-lg text-sm leading-7 text-white/45 sm:mt-12">
-              JW Studio combines visual design, modern development
-              and motion to create digital experiences that feel
-              considered from the first interaction to the last.
+              JW Studio combines visual design, modern development and motion to create dynamic visual experiences tailored to elevate brands.
             </p>
           </div>
         </div>
       </section>
 
-      {/* =========================================================
-          WORK
-      ========================================================= */}
-
+      {/* SELECTED WORK */}
       <section
         id="work"
         className="relative px-5 pb-24 sm:px-6 sm:pb-32 md:px-10 md:pb-48"
@@ -1373,10 +1097,7 @@ export default function Home() {
         </div>
       </section>
 
-      {/* =========================================================
-          SERVICES
-      ========================================================= */}
-
+      {/* SERVICES */}
       <section
         id="services"
         className="relative overflow-hidden border-y border-white/10 px-5 py-24 sm:px-6 sm:py-32 md:px-10 md:py-48"
@@ -1420,10 +1141,7 @@ export default function Home() {
         </div>
       </section>
 
-      {/* =========================================================
-          STATEMENT
-      ========================================================= */}
-
+      {/* STATEMENT */}
       <section className="relative px-5 py-32 sm:px-6 sm:py-40 md:px-10 md:py-64">
         <div className="mx-auto max-w-[1400px] text-center">
           <p className="mb-8 text-[9px] uppercase tracking-[0.25em] text-white/30 sm:mb-10">
@@ -1432,20 +1150,14 @@ export default function Home() {
 
           <h2 className="text-[clamp(3.2rem,10vw,10rem)] font-light leading-[0.82] tracking-[-0.08em]">
             <span className="block">MAKE IT</span>
-
-            <span
-              className={`${serif.className} italic text-white/50`}
-            >
+            <span className={`${serif.className} italic text-white/50`}>
               memorable.
             </span>
           </h2>
         </div>
       </section>
 
-      {/* =========================================================
-          CONTACT
-      ========================================================= */}
-
+      {/* CONTACT */}
       <section
         id="contact"
         className="relative min-h-[80vh] overflow-hidden border-t border-white/10 px-5 py-12 sm:px-6 sm:py-16 md:px-10"
@@ -1473,9 +1185,7 @@ export default function Home() {
               <span className="transition-all duration-700 group-hover:italic">
                 LET&apos;S
               </span>
-
               <br />
-
               <span className="outline-text transition-all duration-700 group-hover:text-white">
                 CREATE.
               </span>
@@ -1484,9 +1194,7 @@ export default function Home() {
 
           <div className="flex flex-col justify-between gap-5 border-t border-white/10 pt-6 text-[8px] uppercase tracking-[0.16em] text-white/30 sm:text-[9px] sm:tracking-[0.18em] md:flex-row">
             <span>JW Studio © 2026</span>
-
             <span>Designed & developed by JW Studio</span>
-
             <span>United Kingdom / France</span>
           </div>
         </div>

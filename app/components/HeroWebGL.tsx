@@ -9,418 +9,201 @@ type PointerState = {
   y: number;
 };
 
-function HeroObject() {
+// Advanced Refractive Glass & Dispersion Shader
+const RefractionGlassShader = {
+  uniforms: {
+    uTime: { value: 0 },
+    uPointer: { value: new THREE.Vector2(0, 0) },
+    uBaseColor: { value: new THREE.Color("#0d1310") },
+    uGlowColor: { value: new THREE.Color("#7df9ff") },
+    uRimColor: { value: new THREE.Color("#b4ece1") },
+    uIntro: { value: 0 },
+  },
+  vertexShader: `
+    uniform float uTime;
+    uniform vec2 uPointer;
+    uniform float uIntro;
+
+    varying vec3 vNormal;
+    varying vec3 vEyeVector;
+    varying vec3 vWorldPosition;
+    varying float vDisplacement;
+
+    void main() {
+      vNormal = normalize(normalMatrix * normal);
+      vec3 pos = position;
+
+      // Complex dual-frequency harmonic wave
+      float wave1 = sin(pos.x * 2.5 + uTime * 0.9) * cos(pos.y * 2.2 + uTime * 0.7);
+      float wave2 = cos(pos.z * 3.0 + uTime * 1.1) * sin(pos.x * 1.8 + uTime * 0.5);
+      
+      // Dynamic magnetic cursor deformation
+      float distToCursor = max(0.0, dot(vNormal, normalize(vec3(uPointer * 1.5, 1.0))));
+      float magneticPull = pow(distToCursor, 2.5) * 0.22;
+
+      float totalDisplacement = (wave1 * 0.06 + wave2 * 0.04 + magneticPull) * uIntro;
+      vDisplacement = totalDisplacement;
+
+      pos += normal * totalDisplacement;
+      
+      vec4 worldPosition = modelMatrix * vec4(pos, 1.0);
+      vWorldPosition = worldPosition.xyz;
+      vEyeVector = normalize(worldPosition.xyz - cameraPosition);
+
+      gl_Position = projectionMatrix * viewMatrix * worldPosition;
+    }
+  `,
+  fragmentShader: `
+    uniform vec3 uBaseColor;
+    uniform vec3 uGlowColor;
+    uniform vec3 uRimColor;
+    uniform float uIntro;
+    uniform float uTime;
+
+    varying vec3 vNormal;
+    varying vec3 vEyeVector;
+    varying vec3 vWorldPosition;
+    varying float vDisplacement;
+
+    void main() {
+      vec3 normal = normalize(vNormal);
+      vec3 eyeVector = normalize(vEyeVector);
+
+      // Fresnel rim effect (Glass transmission)
+      float fresnel = pow(1.0 + dot(eyeVector, normal), 3.0);
+      
+      // Internal light scattering calculation
+      float internalScattering = max(0.0, dot(-eyeVector, normal));
+      internalScattering = pow(internalScattering, 4.0);
+
+      // Chromatic dispersion shimmer along edges
+      float chromatic = sin(uTime * 2.0 + vWorldPosition.y * 4.0) * 0.5 + 0.5;
+      vec3 dispersionColor = mix(uGlowColor, uRimColor, chromatic);
+
+      // Composite final liquid glass shade
+      vec3 finalColor = mix(uBaseColor, dispersionColor, fresnel * 0.85);
+      finalColor += uGlowColor * (internalScattering * 0.35 + vDisplacement * 1.2);
+
+      float alpha = (fresnel * 0.75 + 0.18 + vDisplacement * 0.4) * uIntro;
+
+      gl_FragColor = vec4(finalColor, min(alpha, 0.92));
+    }
+  `,
+};
+
+function HeroSculpture() {
   const group = useRef<THREE.Group>(null);
-  const core = useRef<THREE.Mesh>(null);
-  const shell = useRef<THREE.Mesh>(null);
-  const ring = useRef<THREE.Mesh>(null);
+  const mainMesh = useRef<THREE.Mesh>(null);
+  const haloRing = useRef<THREE.Mesh>(null);
+  const outerTorus = useRef<THREE.Mesh>(null);
 
   const pointer = useRef<PointerState>({ x: 0, y: 0 });
   const targetPointer = useRef<PointerState>({ x: 0, y: 0 });
 
   const intro = useRef(0);
-  const reducedMotion = useRef(false);
-
   const viewport = useThree((state) => state.viewport);
 
-  const targetPosition = useMemo(() => new THREE.Vector3(), []);
-  const cursorDirection = useMemo(() => new THREE.Vector3(), []);
-
-  /*
-   * The main object is deliberately less dense than the previous
-   * version. The shape should read as a piece of digital sculpture,
-   * not a giant technical diagram.
-   */
-  const geometry = useMemo(() => {
-    const geo = new THREE.IcosahedronGeometry(1.35, 3);
-
-    const position = geo.attributes.position;
-    const original = new Float32Array(position.array.length);
-    original.set(position.array);
-
-    geo.userData.originalPositions = original;
-
-    return geo;
+  const glassMaterial = useMemo(() => {
+    return new THREE.ShaderMaterial({
+      uniforms: THREE.UniformsUtils.clone(RefractionGlassShader.uniforms),
+      vertexShader: RefractionGlassShader.vertexShader,
+      fragmentShader: RefractionGlassShader.fragmentShader,
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    });
   }, []);
 
-  const shellGeometry = useMemo(
-    () => new THREE.IcosahedronGeometry(1.58, 2),
-    []
-  );
-
-  const ringGeometry = useMemo(
-    () => new THREE.TorusGeometry(1.62, 0.006, 8, 96),
-    []
-  );
+  const coreGeo = useMemo(() => new THREE.IcosahedronGeometry(1.4, 16), []);
+  const haloGeo = useMemo(() => new THREE.TorusGeometry(1.85, 0.008, 16, 100), []);
+  const torusGeo = useMemo(() => new THREE.TorusGeometry(2.25, 0.003, 16, 120), []);
 
   const isMobile = viewport.width < 5;
-
-  const responsiveScale = isMobile
-    ? 0.58
-    : viewport.width < 7
-      ? 0.76
-      : 0.9;
-
-  useEffect(() => {
-    const mediaQuery = window.matchMedia(
-      "(prefers-reduced-motion: reduce)"
-    );
-
-    reducedMotion.current = mediaQuery.matches;
-
-    const handleMotion = () => {
-      reducedMotion.current = mediaQuery.matches;
-    };
-
-    mediaQuery.addEventListener("change", handleMotion);
-
-    return () => {
-      mediaQuery.removeEventListener("change", handleMotion);
-    };
-  }, []);
+  const responsiveScale = isMobile ? 0.55 : viewport.width < 7 ? 0.75 : 0.95;
 
   useEffect(() => {
     const handlePointerMove = (event: PointerEvent) => {
-      targetPointer.current.x =
-        event.clientX / window.innerWidth - 0.5;
-
-      targetPointer.current.y =
-        event.clientY / window.innerHeight - 0.5;
+      targetPointer.current.x = (event.clientX / window.innerWidth - 0.5) * 2;
+      targetPointer.current.y = (event.clientY / window.innerHeight - 0.5) * 2;
     };
 
-    window.addEventListener("pointermove", handlePointerMove, {
-      passive: true,
-    });
-
-    return () => {
-      window.removeEventListener("pointermove", handlePointerMove);
-    };
+    window.addEventListener("pointermove", handlePointerMove, { passive: true });
+    return () => window.removeEventListener("pointermove", handlePointerMove);
   }, []);
 
   useFrame((state, delta) => {
-    if (!group.current || !core.current) return;
+    if (!group.current) return;
 
     const time = state.clock.getElapsedTime();
-    const motion = reducedMotion.current ? 0 : 1;
 
-    /*
-     * Quick initial assembly.
-     *
-     * The object begins almost collapsed and expands into place.
-     * This is intentionally short so it feels like a design
-     * transition rather than a loading animation.
-     */
-    intro.current = THREE.MathUtils.damp(
-      intro.current,
-      1,
-      3.8,
-      delta
-    );
+    intro.current = THREE.MathUtils.damp(intro.current, 1, 3.5, delta);
+    const introEase = THREE.MathUtils.smoothstep(intro.current, 0, 1);
 
-    const introEase = THREE.MathUtils.smoothstep(
-      intro.current,
-      0,
-      1
-    );
+    pointer.current.x = THREE.MathUtils.lerp(pointer.current.x, targetPointer.current.x, 0.05);
+    pointer.current.y = THREE.MathUtils.lerp(pointer.current.y, targetPointer.current.y, 0.05);
 
-    pointer.current.x = THREE.MathUtils.lerp(
-      pointer.current.x,
-      targetPointer.current.x,
-      0.055
-    );
+    const px = pointer.current.x;
+    const py = pointer.current.y;
 
-    pointer.current.y = THREE.MathUtils.lerp(
-      pointer.current.y,
-      targetPointer.current.y,
-      0.055
-    );
+    glassMaterial.uniforms.uTime.value = time;
+    glassMaterial.uniforms.uPointer.value.set(px, py);
+    glassMaterial.uniforms.uIntro.value = introEase;
 
-    const mx = pointer.current.x;
-    const my = pointer.current.y;
+    // Responsive position drift
+    group.current.position.x = Math.sin(time * 0.4) * 0.06 + px * 0.12;
+    group.current.position.y = Math.cos(time * 0.3) * 0.07 - py * 0.08;
 
-    /*
-     * The object slowly floats, but the movement is intentionally
-     * restrained. It should support the typography rather than
-     * becoming the entire website.
-     */
-    const floatX =
-      Math.sin(time * 0.32) * 0.055 * motion;
+    group.current.rotation.y = time * 0.08 + px * 0.25;
+    group.current.rotation.x = Math.sin(time * 0.25) * 0.05 - py * 0.18;
 
-    const floatY =
-      Math.cos(time * 0.27) * 0.075 * motion;
+    const breathe = 1 + Math.sin(time * 0.7) * 0.025;
+    group.current.scale.setScalar(responsiveScale * breathe * introEase);
 
-    const cursorX =
-      mx * 0.12 * motion;
-
-    const cursorY =
-      -my * 0.08 * motion;
-
-    targetPosition.set(
-      floatX + cursorX,
-      floatY + cursorY,
-      0
-    );
-
-    group.current.position.lerp(
-      targetPosition,
-      0.035
-    );
-
-    /*
-     * Subtle physical rotation.
-     */
-    group.current.rotation.y =
-      time * 0.095 * motion +
-      mx * 0.3;
-
-    group.current.rotation.x =
-      Math.sin(time * 0.22) *
-        0.055 *
-        motion -
-      my * 0.18;
-
-    group.current.rotation.z =
-      Math.cos(time * 0.18) *
-        0.025 *
-        motion;
-
-    /*
-     * Build from the centre.
-     */
-    const breathing =
-      1 +
-      Math.sin(time * 0.7) *
-        0.025 *
-        motion;
-
-    const buildScale =
-      THREE.MathUtils.lerp(
-        0.08,
-        1,
-        introEase
-      );
-
-    group.current.scale.setScalar(
-      responsiveScale *
-        breathing *
-        buildScale
-    );
-
-    /*
-     * Organic surface deformation.
-     *
-     * Desktop gets the full treatment.
-     * Mobile gets a much cheaper and calmer version.
-     */
-    const position = geometry.attributes.position;
-
-    const original =
-      geometry.userData.originalPositions as Float32Array;
-
-    cursorDirection
-      .set(mx, -my, 0.75)
-      .normalize();
-
-    const vertexCount = position.count;
-
-    for (let i = 0; i < vertexCount; i++) {
-      const index = i * 3;
-
-      const ox = original[index];
-      const oy = original[index + 1];
-      const oz = original[index + 2];
-
-      const length = Math.sqrt(
-        ox * ox +
-          oy * oy +
-          oz * oz
-      );
-
-      const nx = ox / length;
-      const ny = oy / length;
-      const nz = oz / length;
-
-      const baseWave =
-        Math.sin(
-          ox * 2.6 +
-            time * 0.5
-        ) * 0.025;
-
-      const secondWave = isMobile
-        ? 0
-        : Math.sin(
-            oy * 3.2 -
-              time * 0.42
-          ) * 0.018;
-
-      const cursorInfluence =
-        Math.max(
-          0,
-          nx * cursorDirection.x +
-            ny * cursorDirection.y +
-            nz * cursorDirection.z
-        );
-
-      const cursorDeformation = isMobile
-        ? cursorInfluence * 0.035
-        : cursorInfluence *
-          cursorInfluence *
-          0.075;
-
-      const displacement =
-        (
-          baseWave +
-          secondWave +
-          cursorDeformation
-        ) *
-        motion;
-
-      position.setXYZ(
-        i,
-        ox + nx * displacement,
-        oy + ny * displacement,
-        oz + nz * displacement
-      );
+    if (haloRing.current) {
+      haloRing.current.rotation.x = Math.PI * 0.4 + Math.sin(time * 0.3) * 0.08;
+      haloRing.current.rotation.y = time * 0.12;
     }
 
-    position.needsUpdate = true;
-
-    /*
-     * Outer shell.
-     */
-    if (shell.current) {
-      shell.current.rotation.x =
-        -time *
-          (isMobile ? 0.025 : 0.055) *
-          motion;
-
-      shell.current.rotation.y =
-        time *
-          (isMobile ? 0.035 : 0.065) *
-          motion;
-
-      shell.current.rotation.z =
-        mx * 0.12;
-
-      const shellScale =
-        1 +
-        Math.sin(time * 0.38) *
-          (isMobile ? 0.012 : 0.022) *
-          motion;
-
-      shell.current.scale.setScalar(
-        shellScale
-      );
-    }
-
-    /*
-     * Fine orbital ring.
-     */
-    if (ring.current) {
-      ring.current.rotation.x =
-        Math.PI * 0.28 +
-        Math.sin(time * 0.2) *
-          0.08 *
-          motion;
-
-      ring.current.rotation.y =
-        time *
-          (isMobile ? 0.04 : 0.075) *
-          motion;
-
-      ring.current.rotation.z =
-        mx * 0.15;
-
-      ring.current.scale.setScalar(
-        0.96 +
-          Math.sin(time * 0.55) *
-            0.015 *
-            motion
-      );
-    }
-
-    /*
-     * Core material subtly changes opacity during assembly.
-     */
-    const coreMaterial =
-      core.current.material as THREE.MeshBasicMaterial;
-
-    coreMaterial.opacity =
-      0.13 +
-      introEase * 0.035;
-
-    if (shell.current) {
-      const shellMaterial =
-        shell.current.material as THREE.MeshBasicMaterial;
-
-      shellMaterial.opacity =
-        0.025 +
-        introEase * 0.035;
+    if (outerTorus.current) {
+      outerTorus.current.rotation.x = -Math.PI * 0.3 + Math.cos(time * 0.25) * 0.05;
+      outerTorus.current.rotation.z = -time * 0.06;
     }
   });
 
   return (
     <group ref={group}>
-      <mesh
-        ref={core}
-        geometry={geometry}
-        scale={1.02}
-      >
+      {/* Central Refractive Liquid Mesh */}
+      <mesh ref={mainMesh} geometry={coreGeo} material={glassMaterial} />
+
+      {/* Internal Luminous Core */}
+      <mesh scale={0.55}>
+        <sphereGeometry args={[1, 32, 32]} />
         <meshBasicMaterial
-          color="#dce8e0"
+          color="#9bf2ea"
           transparent
-          opacity={0.15}
-          wireframe
+          opacity={0.08}
           depthWrite={false}
           blending={THREE.AdditiveBlending}
         />
       </mesh>
 
-      <mesh
-        ref={shell}
-        geometry={shellGeometry}
-      >
+      {/* Dynamic Inner Light Ring */}
+      <mesh ref={haloRing} geometry={haloGeo}>
         <meshBasicMaterial
-          color="#a9bdb1"
+          color="#c8fcea"
           transparent
-          opacity={0.045}
-          wireframe
+          opacity={0.25}
           depthWrite={false}
           blending={THREE.AdditiveBlending}
         />
       </mesh>
 
-      <mesh
-        ref={ring}
-        geometry={ringGeometry}
-        rotation={[
-          Math.PI * 0.28,
-          0,
-          0,
-        ]}
-      >
+      {/* Fine Outer Orbit Ring */}
+      <mesh ref={outerTorus} geometry={torusGeo}>
         <meshBasicMaterial
-          color="#dce8e0"
+          color="#5eead4"
           transparent
-          opacity={0.09}
-          depthWrite={false}
-          blending={THREE.AdditiveBlending}
-        />
-      </mesh>
-
-      <mesh scale={0.72}>
-        <sphereGeometry
-          args={[
-            1,
-            isMobile ? 12 : 18,
-            isMobile ? 12 : 18,
-          ]}
-        />
-
-        <meshBasicMaterial
-          color="#e5eee8"
-          transparent
-          opacity={0.012}
+          opacity={0.12}
           depthWrite={false}
           blending={THREE.AdditiveBlending}
         />
@@ -429,102 +212,45 @@ function HeroObject() {
   );
 }
 
-function Scene() {
-  return <HeroObject />;
-}
-
 export default function HeroWebGL() {
   return (
-    <div
-      className="pointer-events-none absolute inset-0 z-0 overflow-hidden"
-      aria-hidden="true"
-    >
+    <div className="pointer-events-none absolute inset-0 z-0 overflow-hidden" aria-hidden="true">
       <Canvas
-        camera={{
-          position: [0, 0, 5],
-          fov: 45,
-        }}
-        dpr={[1, 1.15]}
+        camera={{ position: [0, 0, 5], fov: 42 }}
+        dpr={[1, 1.5]}
         gl={{
-          antialias: false,
+          antialias: true,
           alpha: true,
           powerPreference: "high-performance",
           stencil: false,
           depth: true,
         }}
-        performance={{
-          min: 0.65,
-        }}
+        performance={{ min: 0.75 }}
       >
-        <Scene />
+        <HeroSculpture />
       </Canvas>
 
-      {/* Soft atmospheric field */}
+      {/* Atmospheric Soft Light Aura */}
       <div
         className="
           pointer-events-none
           absolute
           left-1/2
           top-1/2
-          h-[20rem]
-          w-[20rem]
+          h-[26rem]
+          w-[26rem]
           -translate-x-1/2
           -translate-y-1/2
           rounded-full
-          blur-[80px]
-          sm:h-[25rem]
-          sm:w-[25rem]
-          sm:blur-[95px]
-          md:h-[29rem]
-          md:w-[29rem]
-          md:blur-[105px]
+          blur-[100px]
+          sm:h-[32rem]
+          sm:w-[32rem]
+          sm:blur-[120px]
         "
         style={{
           background:
-            "radial-gradient(circle, rgba(180,205,190,0.07) 0%, rgba(120,150,135,0.025) 38%, transparent 70%)",
+            "radial-gradient(circle, rgba(94, 234, 212, 0.09) 0%, rgba(15, 23, 42, 0) 70%)",
         }}
-      />
-
-      {/* Small centre glow */}
-      <div
-        className="
-          pointer-events-none
-          absolute
-          left-1/2
-          top-1/2
-          h-20
-          w-20
-          -translate-x-1/2
-          -translate-y-1/2
-          rounded-full
-          blur-[35px]
-          sm:h-24
-          sm:w-24
-          md:h-28
-          md:w-28
-          md:blur-[45px]
-        "
-        style={{
-          background:
-            "radial-gradient(circle, rgba(220,235,225,0.105), transparent 70%)",
-        }}
-      />
-
-      {/* Fine central point */}
-      <div
-        className="
-          pointer-events-none
-          absolute
-          left-1/2
-          top-1/2
-          h-1
-          w-1
-          -translate-x-1/2
-          -translate-y-1/2
-          rounded-full
-          bg-white/25
-          blur-[1px]
-        "
       />
     </div>
   );
