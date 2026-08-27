@@ -49,6 +49,13 @@ const projects = [
   },
 ];
 
+const menuItems = [
+  { label: "Work", href: "#work" },
+  { label: "Studio", href: "#studio" },
+  { label: "Services", href: "#services" },
+  { label: "Contact", href: "#contact" },
+];
+
 type MousePosition = {
   x: number;
   y: number;
@@ -89,6 +96,7 @@ export default function Home() {
   });
 
   const [menuOpen, setMenuOpen] = useState(false);
+  const [activeMenuIndex, setActiveMenuIndex] = useState<number | null>(null);
   const [showWebGL, setShowWebGL] = useState(false);
   const [isDesktop, setIsDesktop] = useState(false);
   
@@ -842,7 +850,7 @@ export default function Home() {
         aria-hidden="true"
       />
 
-      {/* NAVIGATION */}
+      {/* NAVIGATION HEADER */}
       <header 
         style={{ opacity: isNavVisible ? 1 : 0 }} 
         className={`fixed left-0 right-0 top-0 z-[80] flex items-center justify-between px-5 py-5 mix-blend-difference sm:px-6 sm:py-6 md:px-10 md:py-8 reveal-item reveal-nav ${isNavVisible ? "is-revealed" : ""}`}
@@ -871,41 +879,28 @@ export default function Home() {
         </div>
       </header>
 
-      {/* MENU OVERLAY */}
+      {/* MINIMALIST MENU OVERLAY */}
       <div
         aria-hidden={!menuOpen}
-        className={`fixed inset-0 z-[70] overflow-hidden bg-[#0b0b0b] transition-opacity duration-700 ${
-          menuOpen ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0"
+        className={`fixed inset-0 z-[70] flex items-center justify-center bg-[#080808] transition-all duration-700 ease-[cubic-bezier(0.16,1,0.3,1)] ${
+          menuOpen ? "pointer-events-auto opacity-100 backdrop-blur-md" : "pointer-events-none opacity-0"
         }`}
       >
-        <div
-          className={`absolute left-1/2 top-1/2 h-[75vw] w-[75vw] max-h-[900px] max-w-[900px] -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/[0.035] transition-transform duration-[1400ms] ease-[cubic-bezier(0.16,1,0.3,1)] ${
-            menuOpen ? "scale-100 rotate-0" : "scale-50 rotate-[-18deg]"
-          }`}
-        />
-
-        <div
-          className={`absolute left-1/2 top-1/2 h-[55vw] w-[55vw] max-h-[650px] max-w-[650px] -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/[0.04] transition-transform duration-[1600ms] ease-[cubic-bezier(0.16,1,0.3,1)] ${
-            menuOpen ? "scale-100 rotate-0" : "scale-50 rotate-[24deg]"
-          }`}
-        />
-
-        <nav className="relative z-10 flex h-full flex-col items-center justify-center gap-0">
-          {["Work", "Studio", "Services", "Contact"].map((item, index) => (
+        <nav className="flex flex-col items-center justify-center gap-6 md:gap-10">
+          {menuItems.map((item, index) => (
             <a
-              key={item}
-              href={`#${item.toLowerCase()}`}
+              key={item.label}
+              href={item.href}
               onClick={() => setMenuOpen(false)}
-              className={`group relative text-[clamp(3.2rem,11vw,8rem)] font-light leading-[0.9] tracking-[-0.07em] transition-all duration-[800ms] ease-[cubic-bezier(0.16,1,0.3,1)] hover:italic ${
-                menuOpen ? "translate-y-0 opacity-100" : "translate-y-16 opacity-0"
+              className={`group relative text-[clamp(3.5rem,10vw,8rem)] font-bold tracking-[-0.05em] text-white/90 transition-all duration-[700ms] ease-[cubic-bezier(0.16,1,0.3,1)] hover:scale-105 hover:text-white ${
+                menuOpen ? "translate-y-0 opacity-100" : "translate-y-8 opacity-0"
               }`}
               style={{
-                transitionDelay: `${index * 80 + 120}ms`,
+                transitionDelay: `${index * 80 + 100}ms`,
               }}
             >
-              <span className="relative">
-                {item}
-                <span className="absolute -right-5 top-1/2 h-1.5 w-1.5 -translate-y-1/2 scale-0 rounded-full bg-white transition-transform duration-500 group-hover:scale-100" />
+              <span className="relative z-10 inline-block transition-transform duration-500 group-hover:scale-110">
+                {item.label}
               </span>
             </a>
           ))}
