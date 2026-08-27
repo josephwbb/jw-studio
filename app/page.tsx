@@ -91,9 +91,20 @@ export default function Home() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [showWebGL, setShowWebGL] = useState(false);
   const [isDesktop, setIsDesktop] = useState(false);
+  const [isAssembled, setIsAssembled] = useState(false);
 
   const mouseTarget = useRef({ x: 0, y: 0 });
   const mouseCurrent = useRef({ x: 0, y: 0 });
+
+  useEffect(() => {
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reduceMotion) {
+      setIsAssembled(true);
+      return;
+    }
+    const assemblyTimer = window.setTimeout(() => setIsAssembled(true), 80);
+    return () => window.clearTimeout(assemblyTimer);
+  }, []);
 
   useEffect(() => {
     const startWebGL = () => {
@@ -1147,6 +1158,33 @@ export default function Home() {
         }
 
         /* ---------------------------------------------------------
+           HERO ASSEMBLY
+        --------------------------------------------------------- */
+        .hero-assembly-nav, .hero-assembly, .hero-title-line, .hero-description, .hero-webgl-wrap, .hero-atmosphere, .hero-meta, .hero-assembly-scroll { opacity: 0; will-change: transform, opacity; }
+        .hero-assembly-nav { transform: translateY(-18px); transition: opacity 700ms ease, transform 900ms cubic-bezier(0.16,1,0.3,1); }
+        .hero-assembly-nav.is-assembled { opacity: 1; transform: translateY(0); }
+        .hero-assembly-meta { transform: translateY(16px); transition: opacity 700ms 180ms ease, transform 900ms 180ms cubic-bezier(0.16,1,0.3,1); }
+        .hero-assembly-meta.is-assembled { opacity: 1; transform: translateY(0); }
+        .hero-title-line { transition: opacity 1100ms cubic-bezier(0.16,1,0.3,1), transform 1300ms cubic-bezier(0.16,1,0.3,1); }
+        .hero-title-jw { transform: translateY(110%); }
+        .hero-title-studio { transform: translateY(120%) translateX(-3vw); }
+        .hero-title-jw.is-assembled { opacity: 1; transform: translateY(0); transition-delay: 260ms; }
+        .hero-title-studio.is-assembled { opacity: 1; transform: translateY(0) translateX(0); transition-delay: 380ms; }
+        .hero-description { transform: translateY(24px); transition: opacity 900ms 620ms ease, transform 1000ms 620ms cubic-bezier(0.16,1,0.3,1); }
+        .hero-description.is-assembled { opacity: 1; transform: translateY(0); }
+        .hero-webgl-wrap { filter: blur(10px); transition: opacity 1200ms 300ms ease, filter 1200ms 300ms ease; }
+        .hero-webgl-wrap.is-assembled { opacity: 1; filter: blur(0); }
+        .hero-atmosphere { transform: translate(-50%,-50%) scale(0.65); transition: opacity 1600ms 160ms ease, transform 1800ms 160ms cubic-bezier(0.16,1,0.3,1); }
+        .hero-atmosphere.is-assembled { opacity: 0.4; transform: translate(-50%,-50%) scale(1); }
+        .hero-meta-left { transform: translateX(-14px); transition: opacity 800ms 700ms ease, transform 1000ms 700ms cubic-bezier(0.16,1,0.3,1); }
+        .hero-meta-right { transform: translateX(14px); transition: opacity 800ms 780ms ease, transform 1000ms 780ms cubic-bezier(0.16,1,0.3,1); }
+        .hero-meta.is-assembled { opacity: 1; transform: translateX(0); }
+        .hero-assembly-meta-right { transform: translateY(16px); transition: opacity 800ms 760ms ease, transform 900ms 760ms cubic-bezier(0.16,1,0.3,1); }
+        .hero-assembly-meta-right.is-assembled { opacity: 1; transform: translateY(0); }
+        .hero-assembly-scroll { transform: translateY(12px); transition: opacity 700ms 1000ms ease, transform 900ms 1000ms cubic-bezier(0.16,1,0.3,1); }
+        .hero-assembly-scroll.is-assembled { opacity: 1; transform: translateY(0); }
+
+        /* ---------------------------------------------------------
            MOBILE
         --------------------------------------------------------- */
 
@@ -1174,6 +1212,12 @@ export default function Home() {
           .menu-control::before {
             inset: 5px;
           }
+        }
+
+        @media (max-width: 640px) {
+          .hero-title-jw { transform: translateY(70%); }
+          .hero-title-studio { transform: translateY(80%) translateX(-2vw); }
+          .hero-description { max-width: 290px; }
         }
 
         @media (prefers-reduced-motion: reduce) {
@@ -1214,7 +1258,7 @@ export default function Home() {
           NAVIGATION
       ========================================================= */}
 
-      <header className="fixed left-0 right-0 top-0 z-[80] flex items-center justify-between px-5 py-5 mix-blend-difference sm:px-6 sm:py-6 md:px-10 md:py-8">
+      <header className={`fixed left-0 right-0 top-0 z-[80] flex items-center justify-between px-5 py-5 mix-blend-difference sm:px-6 sm:py-6 md:px-10 md:py-8 hero-assembly-nav ${isAssembled ? "is-assembled" : ""}`} >
         <a
           href="#"
           className="relative z-10 text-sm font-semibold tracking-[-0.04em]"
@@ -1338,77 +1382,66 @@ export default function Home() {
         className="relative flex min-h-[100svh] flex-col justify-between overflow-hidden px-5 pb-7 pt-28 sm:px-6 sm:pb-8 sm:pt-32 md:min-h-screen md:px-10 md:pb-10"
       >
         {/* ATMOSPHERIC LIGHT */}
-
         <div
-          className="pointer-events-none absolute left-1/2 top-1/2 h-[90vw] w-[90vw] max-h-[900px] max-w-[900px] -translate-x-1/2 -translate-y-1/2 rounded-full opacity-40 blur-[90px] sm:blur-[110px]"
+          className={`pointer-events-none absolute left-1/2 top-1/2 h-[86vw] w-[86vw] max-h-[900px] max-w-[900px] -translate-x-1/2 -translate-y-1/2 rounded-full opacity-40 blur-[90px] sm:blur-[110px] hero-atmosphere ${isAssembled ? "is-assembled" : ""}`}
           style={{
-            background: `radial-gradient(
-              circle at ${50 + mouse.normalizedX * 20}%
-              ${50 + mouse.normalizedY * 20}%,
-              rgba(150,180,160,0.20),
-              rgba(100,120,110,0.06) 35%,
-              transparent 70%
-            )`,
+            background: `radial-gradient(circle at ${50 + mouse.normalizedX * 20}% ${50 + mouse.normalizedY * 20}%, rgba(150,180,160,0.20), rgba(100,120,110,0.06) 35%, transparent 70%)`,
           }}
         />
 
         {/* Cursor light */}
-
         <div
           className="pointer-events-none absolute left-1/2 top-1/2 z-[2] h-[280px] w-[280px] -translate-x-1/2 -translate-y-1/2 rounded-full opacity-25 blur-[80px] transition-transform duration-700 ease-out sm:h-[400px] sm:w-[400px] sm:blur-[100px]"
           style={{
-            transform: `translate(
-              calc(-50% + ${lightX}px),
-              calc(-50% + ${lightY}px)
-            )`,
-            background:
-              "radial-gradient(circle, rgba(220,235,225,0.12), transparent 65%)",
+            transform: `translate(calc(-50% + ${lightX}px), calc(-50% + ${lightY}px))`,
+            background: "radial-gradient(circle, rgba(220,235,225,0.12), transparent 65%)",
           }}
         />
 
         {/* WebGL */}
-
         {showWebGL && (
           <div
-            className="pointer-events-none absolute left-1/2 top-[42%] z-[5] h-[52vh] w-[78vw] -translate-x-1/2 -translate-y-1/2 sm:top-1/2 sm:h-[65vh] sm:w-[70vw] md:h-[75vh] md:w-[70vw]"
+            className={`pointer-events-none absolute left-1/2 top-[40%] z-[5] h-[49vh] w-[86vw] -translate-x-1/2 -translate-y-1/2 sm:top-1/2 sm:h-[65vh] sm:w-[70vw] md:h-[75vh] md:w-[70vw] hero-webgl-wrap ${isAssembled ? "is-assembled" : ""}`}
             style={{
               transform: `translate(-50%, -50%) rotateX(${heroRotateX}deg) rotateY(${heroRotateY}deg)`,
               transformStyle: "preserve-3d",
-              transition:
-                "transform 700ms cubic-bezier(0.16, 1, 0.3, 1)",
+              transition: "transform 700ms cubic-bezier(0.16, 1, 0.3, 1)",
             }}
           >
             <HeroWebGL />
           </div>
         )}
 
+        <div className={`pointer-events-none absolute left-5 top-[30%] z-[15] hidden flex-col gap-1 text-[8px] uppercase tracking-[0.2em] text-white/30 sm:flex md:left-10 md:top-[35%] hero-meta hero-meta-left ${isAssembled ? "is-assembled" : ""}`}>
+          <span>WebGL / 01</span>
+          <span>Realtime object</span>
+        </div>
+
+        <div className={`pointer-events-none absolute right-5 top-[42%] z-[15] hidden text-right text-[8px] uppercase tracking-[0.2em] text-white/25 sm:block md:right-10 hero-meta hero-meta-right ${isAssembled ? "is-assembled" : ""}`}>
+          <span>Digital form</span><br /><span>01.26</span>
+        </div>
+
         {/* HERO CONTENT */}
-
         <div className="relative z-20 mt-auto">
-          <div className="mb-5 flex items-center justify-between text-[8px] uppercase tracking-[0.18em] text-white/40 sm:text-[9px] sm:tracking-[0.2em]">
+          <div className={`mb-5 flex items-center justify-between text-[8px] uppercase tracking-[0.18em] text-white/40 sm:text-[9px] sm:tracking-[0.2em] hero-assembly hero-assembly-meta ${isAssembled ? "is-assembled" : ""}`}>
             <span>Digital studio / 2026</span>
-
-            <span className="hidden md:block">
-              Design · Development · Motion
-            </span>
+            <span className="hidden md:block">Design · Development · Motion</span>
           </div>
 
-          <h1 className="select-none text-[22vw] font-light leading-[0.76] tracking-[-0.1em] sm:text-[20vw] md:text-[17vw]">
-            <span className="block">JW</span>
-
-            <span className="outline-text ml-[10vw] block">
-              STUDIO
-            </span>
+          <h1 className="select-none text-[21vw] font-light leading-[0.76] tracking-[-0.105em] sm:text-[20vw] md:text-[15.8vw]">
+            <span className={`block hero-title-line hero-title-jw ${isAssembled ? "is-assembled" : ""}`}>JW</span>
+            <span className={`outline-text ml-[8vw] block hero-title-line hero-title-studio ${isAssembled ? "is-assembled" : ""}`}>STUDIO</span>
           </h1>
 
           <div className="mt-7 flex flex-col justify-between gap-7 sm:mt-8 sm:gap-8 md:flex-row md:items-end">
-            <p className="max-w-[320px] text-[13px] font-light leading-[1.7] text-white/55 sm:text-sm md:max-w-md md:text-base">
-              Independent digital studio creating distinctive
-              websites, identities and interactive experiences for
-              ambitious brands.
+            <p className={`max-w-[330px] text-[13px] font-light leading-[1.7] text-white/55 sm:text-sm md:max-w-md md:text-base hero-description ${isAssembled ? "is-assembled" : ""}`}>
+              Independent digital studio creating distinctive websites, identities and interactive experiences for ambitious brands.
             </p>
 
-            
+            <div className={`hidden items-end gap-8 text-right text-[8px] uppercase tracking-[0.2em] text-white/30 md:flex hero-assembly hero-assembly-meta-right ${isAssembled ? "is-assembled" : ""}`}>
+              <div><span className="block text-white/55">JW</span><span>Studio</span></div>
+              <div><span className="block text-white/55">01</span><span>Digital / Form</span></div>
+            </div>
           </div>
         </div>
 
@@ -1422,7 +1455,7 @@ export default function Home() {
 
         {/* Scroll marker */}
 
-        <div className="absolute bottom-10 right-6 hidden items-center gap-3 text-[9px] uppercase tracking-[0.2em] text-white/30 md:flex">
+        <div className={`absolute bottom-10 right-6 hidden items-center gap-3 text-[9px] uppercase tracking-[0.2em] text-white/30 md:flex hero-assembly-scroll ${isAssembled ? "is-assembled" : ""}`} >
           <span>Scroll</span>
           <span className="h-12 w-px bg-white/20" />
         </div>
