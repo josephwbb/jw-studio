@@ -1,4 +1,3 @@
-
 "use client";
 
 import { Cormorant_Garamond, Plus_Jakarta_Sans } from "next/font/google";
@@ -62,6 +61,20 @@ type InkPoint = {
   y: number;
   life: number;
   size: number;
+  angle: number;
+  drift: number;
+  hue: number;
+};
+
+type CursorParticle = {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  life: number;
+  size: number;
+  rotation: number;
+  rotationSpeed: number;
 };
 
 export default function Home() {
@@ -81,7 +94,6 @@ export default function Home() {
 
   const mouseTarget = useRef({ x: 0, y: 0 });
   const mouseCurrent = useRef({ x: 0, y: 0 });
-  const animationFrame = useRef<number | null>(null);
 
   useEffect(() => {
     const startWebGL = () => {
@@ -99,7 +111,9 @@ export default function Home() {
       fallbackTimer = setTimeout(startWebGL, 1800);
     }
 
-    const mediaQuery = window.matchMedia("(hover: hover) and (pointer: fine)");
+    const mediaQuery = window.matchMedia(
+      "(hover: hover) and (pointer: fine)"
+    );
 
     const updateDevice = () => {
       setIsDesktop(mediaQuery.matches);
@@ -158,11 +172,23 @@ export default function Home() {
   }, []);
 
   /*
-   * INKY CURSOR
+   * ================================================================
+   * EXPERIMENTAL LIQUID CURSOR
+   * ================================================================
    *
-   * The canvas is desktop-only and completely pointer-events-none.
-   * It creates a soft trail which stretches and fades rather than
-   * looking like a standard cursor particle effect.
+   * This deliberately isn't a conventional cursor trail.
+   *
+   * The canvas contains:
+   *
+   * 1. A very small bright cursor core.
+   * 2. A soft atmospheric field around the pointer.
+   * 3. A broad coloured "wake".
+   * 4. Several translucent overlapping ribbons.
+   * 5. Small fragments that detach from the wake.
+   * 6. A subtle reveal layer that changes the colour underneath it.
+   *
+   * Everything is rendered on one pointer-events-none canvas so it
+   * doesn't interfere with the actual website.
    */
   useEffect(() => {
     if (!isDesktop) return;
@@ -179,17 +205,31 @@ export default function Home() {
 
     if (reducedMotion) return;
 
-    const points: InkPoint[] = [];
-
     let width = window.innerWidth;
     let height = window.innerHeight;
+    let pixelRatio = Math.min(window.devicePixelRatio || 1, 1.5);
+
     let frame = 0;
 
-    const resize = () => {
-      const pixelRatio = Math.min(window.devicePixelRatio || 1, 1.5);
+    const points: InkPoint[] = [];
+    const particles: CursorParticle[] = [];
 
+    let pointerX = window.innerWidth / 2;
+    let pointerY = window.innerHeight / 2;
+
+    let previousPointerX = pointerX;
+    let previousPointerY = pointerY;
+
+    let velocityX = 0;
+    let velocityY = 0;
+    let speed = 0;
+
+    let time = 0;
+
+    const resize = () => {
       width = window.innerWidth;
       height = window.innerHeight;
+      pixelRatio = Math.min(window.devicePixelRatio || 1, 1.5);
 
       canvas.width = width * pixelRatio;
       canvas.height = height * pixelRatio;
@@ -203,40 +243,82 @@ export default function Home() {
     resize();
 
     const handlePointerMove = (event: PointerEvent) => {
-      const last = points[points.length - 1];
+      const nextX = event.clientX;
+      const nextY = event.clientY;
 
-      if (!last) {
-        points.push({
-          x: event.clientX,
-          y: event.clientY,
-          life: 1,
-          size: 1,
-        });
+      const dx = nextX - pointerX;
+      const dy = nextY - pointerY;
 
-        return;
-      }
+      velocityX = dx;
+      velocityY = dy;
 
-      const dx = event.clientX - last.x;
-      const dy = event.clientY - last.y;
+      pointerX = nextX;
+      pointerY = nextY;
+
       const distance = Math.sqrt(dx * dx + dy * dy);
 
-      if (distance < 3) return;
+      speed += (distance - speed) * 0.35;
 
-      const steps = Math.min(Math.ceil(distance / 10), 6);
+      if (distance < 1.5) return;
+
+      const steps = Math.min(Math.ceil(distance / 7), 12);
 
       for (let i = 1; i <= steps; i++) {
         const progress = i / steps;
 
+        const x = previousPointerX + dx * progress;
+        const y = previousPointerY + dy * progress;
+
         points.push({
-          x: last.x + dx * progress,
-          y: last.y + dy * progress,
+          x,
+          y,
           life: 1,
-          size: 0.7 + Math.random() * 0.7,
+          size:
+            0.7 +
+            Math.random() * 0.8 +
+            Math.min(speed * 0.025, 1.5),
+          angle: Math.random() * Math.PI * 2,
+          drift: 0.4 + Math.random() * 1.1,
+          hue: Math.random() > 0.72 ? 150 : 135,
         });
+
+        /*
+         * A few particles are emitted from the wake rather than
+         * every point. This keeps it feeling organic instead of
+         * looking like a particle cursor preset.
+         */
+        if (
+          Math.random() < 0.18 &&
+          particles.length < 45 &&
+          speed > 2
+        ) {
+          const angle = Math.atan2(dy, dx);
+          const side = Math.random() > 0.5 ? 1 : -1;
+          const spread = (Math.random() * 0.7 + 0.25) * side;
+
+          particles.push({
+            x,
+            y,
+            vx:
+              -Math.cos(angle) * (0.15 + Math.random() * 0.7) +
+              Math.cos(angle + Math.PI / 2) * spread,
+            vy:
+              -Math.sin(angle) * (0.15 + Math.random() * 0.7) +
+              Math.sin(angle + Math.PI / 2) * spread,
+            life: 1,
+            size: 0.6 + Math.random() * 1.5,
+            rotation: Math.random() * Math.PI * 2,
+            rotationSpeed:
+              (Math.random() - 0.5) * 0.08,
+          });
+        }
       }
 
-      if (points.length > 90) {
-        points.splice(0, points.length - 90);
+      previousPointerX = nextX;
+      previousPointerY = nextY;
+
+      if (points.length > 130) {
+        points.splice(0, points.length - 130);
       }
     };
 
@@ -244,62 +326,483 @@ export default function Home() {
       passive: true,
     });
 
+    const drawGlow = (
+      x: number,
+      y: number,
+      radius: number,
+      opacity: number,
+      hue: number
+    ) => {
+      const gradient = context.createRadialGradient(
+        x,
+        y,
+        0,
+        x,
+        y,
+        radius
+      );
+
+      gradient.addColorStop(
+        0,
+        `hsla(${hue}, 30%, 82%, ${opacity})`
+      );
+
+      gradient.addColorStop(
+        0.18,
+        `hsla(${hue}, 30%, 72%, ${opacity * 0.45})`
+      );
+
+      gradient.addColorStop(
+        0.5,
+        `hsla(${hue}, 30%, 62%, ${opacity * 0.12})`
+      );
+
+      gradient.addColorStop(1, "transparent");
+
+      context.fillStyle = gradient;
+
+      context.beginPath();
+      context.arc(x, y, radius, 0, Math.PI * 2);
+      context.fill();
+    };
+
+    const drawRibbon = (
+      offset: number,
+      widthMultiplier: number,
+      opacityMultiplier: number,
+      phase: number
+    ) => {
+      if (points.length < 3) return;
+
+      context.beginPath();
+
+      const visiblePoints = points.slice(
+        Math.max(0, points.length - 75)
+      );
+
+      for (let i = 0; i < visiblePoints.length; i++) {
+        const point = visiblePoints[i];
+
+        const progress = i / Math.max(visiblePoints.length - 1, 1);
+
+        const wave =
+          Math.sin(time * 0.003 + i * 0.34 + phase) *
+          (3 + progress * 6);
+
+        const angle = point.angle + time * 0.0003;
+
+        const offsetX =
+          Math.cos(angle) * (offset + wave);
+        const offsetY =
+          Math.sin(angle) * (offset + wave);
+
+        const x = point.x + offsetX;
+        const y = point.y + offsetY;
+
+        if (i === 0) {
+          context.moveTo(x, y);
+        } else {
+          const previous = visiblePoints[i - 1];
+
+          const previousWave =
+            Math.sin(
+              time * 0.003 +
+                (i - 1) * 0.34 +
+                phase
+            ) *
+            (3 + progress * 6);
+
+          const previousAngle =
+            previous.angle + time * 0.0003;
+
+          const previousX =
+            previous.x +
+            Math.cos(previousAngle) *
+              (offset + previousWave);
+
+          const previousY =
+            previous.y +
+            Math.sin(previousAngle) *
+              (offset + previousWave);
+
+          const midpointX = (previousX + x) / 2;
+          const midpointY = (previousY + y) / 2;
+
+          context.quadraticCurveTo(
+            previousX,
+            previousY,
+            midpointX,
+            midpointY
+          );
+        }
+      }
+
+      const gradient = context.createLinearGradient(
+        pointerX - 180,
+        pointerY - 180,
+        pointerX + 180,
+        pointerY + 180
+      );
+
+      gradient.addColorStop(
+        0,
+        `hsla(135, 28%, 82%, 0)`
+      );
+
+      gradient.addColorStop(
+        0.5,
+        `hsla(150, 35%, 84%, ${0.045 * opacityMultiplier})`
+      );
+
+      gradient.addColorStop(
+        0.75,
+        `hsla(175, 40%, 78%, ${0.11 * opacityMultiplier})`
+      );
+
+      gradient.addColorStop(
+        1,
+        `hsla(125, 30%, 80%, 0)`
+      );
+
+      context.strokeStyle = gradient;
+      context.lineWidth =
+        (1.8 + speed * 0.025) * widthMultiplier;
+      context.lineCap = "round";
+      context.lineJoin = "round";
+      context.stroke();
+    };
+
     const draw = () => {
+      time += 16;
+
       context.clearRect(0, 0, width, height);
 
-      for (let i = points.length - 1; i >= 0; i--) {
-        points[i].life -= 0.018;
+      /*
+       * Smooth velocity decay.
+       */
+      velocityX *= 0.92;
+      velocityY *= 0.92;
 
-        if (points[i].life <= 0) {
+      speed *= 0.94;
+
+      /*
+       * Age the main wake.
+       */
+      for (let i = points.length - 1; i >= 0; i--) {
+        const point = points[i];
+
+        point.life -= 0.0105;
+
+        point.x +=
+          Math.cos(point.angle + time * 0.001) *
+          point.drift *
+          0.035;
+
+        point.y +=
+          Math.sin(point.angle + time * 0.0013) *
+          point.drift *
+          0.035;
+
+        if (point.life <= 0) {
           points.splice(i, 1);
         }
       }
 
-      if (points.length > 1) {
-        context.save();
+      /*
+       * Age the floating fragments.
+       */
+      for (let i = particles.length - 1; i >= 0; i--) {
+        const particle = particles[i];
 
-        context.globalCompositeOperation = "screen";
-        context.lineCap = "round";
-        context.lineJoin = "round";
+        particle.life -= 0.018;
 
-        for (let i = 1; i < points.length; i++) {
-          const previous = points[i - 1];
+        particle.x += particle.vx;
+        particle.y += particle.vy;
+
+        particle.vx *= 0.975;
+        particle.vy *= 0.975;
+
+        particle.rotation += particle.rotationSpeed;
+
+        if (particle.life <= 0) {
+          particles.splice(i, 1);
+        }
+      }
+
+      /*
+       * ------------------------------------------------------------
+       * ATMOSPHERIC FIELD
+       * ------------------------------------------------------------
+       */
+
+      context.save();
+
+      context.globalCompositeOperation = "screen";
+
+      const atmosphericRadius =
+        45 + Math.min(speed * 2.2, 75);
+
+      drawGlow(
+        pointerX,
+        pointerY,
+        atmosphericRadius,
+        0.07,
+        145
+      );
+
+      /*
+       * A second, offset glow produces the impression that the
+       * cursor is dragging something slightly behind itself.
+       */
+      drawGlow(
+        pointerX - velocityX * 3.5,
+        pointerY - velocityY * 3.5,
+        atmosphericRadius * 1.8,
+        0.025,
+        165
+      );
+
+      /*
+       * ------------------------------------------------------------
+       * BROAD WAKE
+       * ------------------------------------------------------------
+       */
+
+      drawRibbon(0, 2.8, 1, 0);
+      drawRibbon(5, 1.8, 0.75, 1.7);
+      drawRibbon(-5, 1.4, 0.55, 3.1);
+
+      /*
+       * ------------------------------------------------------------
+       * SOFT BLOBS ALONG THE TRAIL
+       * ------------------------------------------------------------
+       */
+
+      if (points.length > 4) {
+        const sampleStep = Math.max(
+          1,
+          Math.floor(points.length / 20)
+        );
+
+        for (
+          let i = 0;
+          i < points.length;
+          i += sampleStep
+        ) {
           const point = points[i];
 
           const progress = i / points.length;
-          const opacity = point.life * progress * 0.12;
 
-          const gradient = context.createLinearGradient(
-            previous.x,
-            previous.y,
+          const blobOpacity =
+            point.life *
+            progress *
+            0.035;
+
+          if (blobOpacity <= 0) continue;
+
+          const blobSize =
+            point.size *
+            (7 + Math.sin(i * 0.7 + time * 0.002) * 2);
+
+          drawGlow(
             point.x,
-            point.y
+            point.y,
+            blobSize,
+            blobOpacity,
+            point.hue
           );
-
-          gradient.addColorStop(
-            0,
-            `rgba(220, 235, 225, ${opacity * 0.15})`
-          );
-
-          gradient.addColorStop(
-            1,
-            `rgba(220, 235, 225, ${opacity})`
-          );
-
-          context.strokeStyle = gradient;
-          context.lineWidth = Math.max(
-            0.5,
-            point.size * point.life * 4
-          );
-
-          context.beginPath();
-          context.moveTo(previous.x, previous.y);
-          context.lineTo(point.x, point.y);
-          context.stroke();
         }
+      }
+
+      /*
+       * ------------------------------------------------------------
+       * FLOATING FRAGMENTS
+       * ------------------------------------------------------------
+       */
+
+      for (const particle of particles) {
+        const alpha =
+          Math.sin(
+            Math.max(0, particle.life) * Math.PI
+          ) * 0.4;
+
+        context.save();
+
+        context.translate(
+          particle.x,
+          particle.y
+        );
+
+        context.rotate(particle.rotation);
+
+        context.globalAlpha = alpha;
+
+        const fragmentGradient =
+          context.createLinearGradient(
+            -particle.size * 3,
+            0,
+            particle.size * 3,
+            0
+          );
+
+        fragmentGradient.addColorStop(
+          0,
+          "rgba(220,235,225,0)"
+        );
+
+        fragmentGradient.addColorStop(
+          0.5,
+          "rgba(220,235,225,0.8)"
+        );
+
+        fragmentGradient.addColorStop(
+          1,
+          "rgba(160,210,190,0)"
+        );
+
+        context.fillStyle = fragmentGradient;
+
+        context.fillRect(
+          -particle.size * 3,
+          -particle.size * 0.5,
+          particle.size * 6,
+          particle.size
+        );
 
         context.restore();
       }
+
+      /*
+       * ------------------------------------------------------------
+       * THE "WINDOW" EFFECT
+       * ------------------------------------------------------------
+       *
+       * Instead of just drawing white, this creates a soft coloured
+       * pocket around the cursor. Because the canvas sits over the
+       * entire site, it reads as though the pointer is revealing
+       * another atmosphere underneath the surface.
+       */
+      context.globalCompositeOperation =
+        "source-over";
+
+      const revealRadius =
+        20 + Math.min(speed * 1.5, 45);
+
+      const revealGradient =
+        context.createRadialGradient(
+          pointerX,
+          pointerY,
+          0,
+          pointerX,
+          pointerY,
+          revealRadius
+        );
+
+      revealGradient.addColorStop(
+        0,
+        "rgba(190, 220, 204, 0.10)"
+      );
+
+      revealGradient.addColorStop(
+        0.25,
+        "rgba(125, 185, 155, 0.045)"
+      );
+
+      revealGradient.addColorStop(
+        0.6,
+        "rgba(80, 145, 115, 0.018)"
+      );
+
+      revealGradient.addColorStop(
+        1,
+        "rgba(0,0,0,0)"
+      );
+
+      context.fillStyle = revealGradient;
+
+      context.beginPath();
+      context.arc(
+        pointerX,
+        pointerY,
+        revealRadius,
+        0,
+        Math.PI * 2
+      );
+      context.fill();
+
+      /*
+       * ------------------------------------------------------------
+       * INNER LIQUID RING
+       * ------------------------------------------------------------
+       */
+
+      const pulse =
+        1 +
+        Math.sin(time * 0.006) * 0.12;
+
+      const innerRadius =
+        (7.5 + Math.min(speed * 0.18, 3)) *
+        pulse;
+
+      const innerGradient =
+        context.createRadialGradient(
+          pointerX,
+          pointerY,
+          0,
+          pointerX,
+          pointerY,
+          innerRadius * 2.5
+        );
+
+      innerGradient.addColorStop(
+        0,
+        "rgba(250, 250, 245, 0.95)"
+      );
+
+      innerGradient.addColorStop(
+        0.2,
+        "rgba(225, 240, 230, 0.72)"
+      );
+
+      innerGradient.addColorStop(
+        0.5,
+        "rgba(180, 220, 195, 0.18)"
+      );
+
+      innerGradient.addColorStop(
+        1,
+        "rgba(180, 220, 195, 0)"
+      );
+
+      context.fillStyle = innerGradient;
+
+      context.beginPath();
+      context.arc(
+        pointerX,
+        pointerY,
+        innerRadius * 2.5,
+        0,
+        Math.PI * 2
+      );
+      context.fill();
+
+      /*
+       * Tiny sharp centre.
+       */
+      context.fillStyle =
+        "rgba(248, 248, 242, 0.96)";
+
+      context.beginPath();
+      context.arc(
+        pointerX,
+        pointerY,
+        2.15,
+        0,
+        Math.PI * 2
+      );
+      context.fill();
+
+      context.restore();
 
       frame = requestAnimationFrame(draw);
     };
@@ -315,8 +818,15 @@ export default function Home() {
     return () => {
       cancelAnimationFrame(frame);
 
-      window.removeEventListener("pointermove", handlePointerMove);
-      window.removeEventListener("resize", handleResize);
+      window.removeEventListener(
+        "pointermove",
+        handlePointerMove
+      );
+
+      window.removeEventListener(
+        "resize",
+        handleResize
+      );
 
       context.clearRect(0, 0, width, height);
     };
@@ -397,46 +907,7 @@ export default function Home() {
         }
 
         /* ---------------------------------------------------------
-           CUSTOM CURSOR
-        --------------------------------------------------------- */
-
-        .cursor-core {
-          position: fixed;
-          left: 0;
-          top: 0;
-          width: 9px;
-          height: 9px;
-          border-radius: 999px;
-          background: rgba(242, 240, 235, 0.95);
-          pointer-events: none;
-          z-index: 9999;
-          transform: translate(-50%, -50%);
-          mix-blend-mode: difference;
-          box-shadow:
-            0 0 12px rgba(220, 235, 225, 0.2),
-            0 0 28px rgba(220, 235, 225, 0.08);
-        }
-
-        .cursor-ring {
-          position: fixed;
-          left: 0;
-          top: 0;
-          width: 38px;
-          height: 38px;
-          border: 1px solid rgba(242, 240, 235, 0.35);
-          border-radius: 999px;
-          pointer-events: none;
-          z-index: 9998;
-          transform: translate(-50%, -50%);
-          transition:
-            width 500ms cubic-bezier(0.16, 1, 0.3, 1),
-            height 500ms cubic-bezier(0.16, 1, 0.3, 1),
-            border-color 400ms ease;
-          mix-blend-mode: difference;
-        }
-
-        /* ---------------------------------------------------------
-           INKY TRAIL
+           EXPERIMENTAL CURSOR
         --------------------------------------------------------- */
 
         .ink-canvas {
@@ -447,6 +918,7 @@ export default function Home() {
           pointer-events: none;
           z-index: 9997;
           mix-blend-mode: screen;
+          overflow: hidden;
         }
 
         /* ---------------------------------------------------------
@@ -716,8 +1188,6 @@ export default function Home() {
         }
 
         @media (hover: none), (pointer: coarse) {
-          .cursor-core,
-          .cursor-ring,
           .ink-canvas {
             display: none !important;
           }
@@ -731,31 +1201,13 @@ export default function Home() {
       {/* GLOBAL NOISE */}
       <div className="noise pointer-events-none fixed inset-0 z-[100] opacity-[0.025]" />
 
-      {/* CUSTOM CURSOR */}
+      {/* EXPERIMENTAL CURSOR */}
       {isDesktop && (
-        <>
-          <div
-            className="cursor-core"
-            style={{
-              left: mouse.x,
-              top: mouse.y,
-            }}
-          />
-
-          <div
-            className="cursor-ring"
-            style={{
-              left: mouse.x,
-              top: mouse.y,
-            }}
-          />
-
-          <canvas
-            ref={inkCanvasRef}
-            className="ink-canvas"
-            aria-hidden="true"
-          />
-        </>
+        <canvas
+          ref={inkCanvasRef}
+          className="ink-canvas"
+          aria-hidden="true"
+        />
       )}
 
       {/* =========================================================
@@ -784,7 +1236,9 @@ export default function Home() {
             }
             aria-expanded={menuOpen}
             onClick={() => setMenuOpen((open) => !open)}
-            className={`menu-control ${menuOpen ? "open" : ""}`}
+            className={`menu-control ${
+              menuOpen ? "open" : ""
+            }`}
           >
             <span className="menu-control-inner">
               <span className="menu-line" />
@@ -806,17 +1260,19 @@ export default function Home() {
             : "pointer-events-none opacity-0"
         }`}
       >
-        {/* Atmospheric menu circles */}
-
         <div
           className={`absolute left-1/2 top-1/2 h-[75vw] w-[75vw] max-h-[900px] max-w-[900px] -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/[0.035] transition-transform duration-[1400ms] ease-[cubic-bezier(0.16,1,0.3,1)] ${
-            menuOpen ? "scale-100 rotate-0" : "scale-50 rotate-[-18deg]"
+            menuOpen
+              ? "scale-100 rotate-0"
+              : "scale-50 rotate-[-18deg]"
           }`}
         />
 
         <div
           className={`absolute left-1/2 top-1/2 h-[55vw] w-[55vw] max-h-[650px] max-w-[650px] -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/[0.04] transition-transform duration-[1600ms] ease-[cubic-bezier(0.16,1,0.3,1)] ${
-            menuOpen ? "scale-100 rotate-0" : "scale-50 rotate-[24deg]"
+            menuOpen
+              ? "scale-100 rotate-0"
+              : "scale-50 rotate-[24deg]"
           }`}
         />
 
@@ -844,6 +1300,7 @@ export default function Home() {
               >
                 <span className="relative">
                   {item}
+
                   <span className="absolute -right-5 top-1/2 h-1.5 w-1.5 -translate-y-1/2 scale-0 rounded-full bg-white transition-transform duration-500 group-hover:scale-100" />
                 </span>
               </a>
@@ -917,7 +1374,8 @@ export default function Home() {
             style={{
               transform: `translate(-50%, -50%) rotateX(${heroRotateX}deg) rotateY(${heroRotateY}deg)`,
               transformStyle: "preserve-3d",
-              transition: "transform 700ms cubic-bezier(0.16, 1, 0.3, 1)",
+              transition:
+                "transform 700ms cubic-bezier(0.16, 1, 0.3, 1)",
             }}
           >
             <HeroWebGL />
@@ -950,16 +1408,7 @@ export default function Home() {
               ambitious brands.
             </p>
 
-            <a
-              href="#work"
-              className="magnetic group flex w-fit items-center gap-4 border-b border-white/30 pb-2 text-[9px] uppercase tracking-[0.2em] sm:text-[10px]"
-            >
-              Explore selected work
-
-              <span className="transition-transform duration-500 group-hover:translate-x-2">
-                ↗
-              </span>
-            </a>
+            
           </div>
         </div>
 

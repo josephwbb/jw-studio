@@ -1,6 +1,6 @@
 "use client";
 
-import { Canvas, useFrame } from "@react-three/fiber";
+import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 
@@ -21,6 +21,18 @@ function AbstractObject() {
   const scroll = useRef(0);
 
   const reducedMotion = useRef(false);
+
+  const cursorDirection = useMemo(
+    () => new THREE.Vector3(),
+    []
+  );
+
+  const targetPosition = useMemo(
+    () => new THREE.Vector3(),
+    []
+  );
+
+  const viewport = useThree((state) => state.viewport);
 
   useEffect(() => {
     const handleMouseMove = (event: MouseEvent) => {
@@ -69,9 +81,11 @@ function AbstractObject() {
   }, []);
 
   /*
-   * Store the original geometry positions so we can
-   * continuously deform the surface without destroying
-   * the underlying shape.
+   * Main geometry.
+   *
+   * Still detailed enough to give the object a fluid,
+   * almost geological appearance, without introducing
+   * particles or expensive post-processing.
    */
   const geometry = useMemo(() => {
     const geo = new THREE.IcosahedronGeometry(1.55, 4);
@@ -89,9 +103,28 @@ function AbstractObject() {
     return geo;
   }, []);
 
+  /*
+   * Secondary shell.
+   *
+   * Lower subdivision keeps this extremely cheap while
+   * adding another layer of depth.
+   */
   const secondaryGeometry = useMemo(() => {
     return new THREE.IcosahedronGeometry(1.78, 2);
   }, []);
+
+  /*
+   * Responsive scale.
+   *
+   * The object is intentionally smaller on narrow screens.
+   * This prevents it competing with the JW / STUDIO typography.
+   */
+  const responsiveScale =
+    viewport.width < 5
+      ? 0.72
+      : viewport.width < 7
+        ? 0.88
+        : 1;
 
   useFrame((state) => {
     if (!group.current || !mesh.current) return;
@@ -100,85 +133,161 @@ function AbstractObject() {
 
     /*
      * Smooth cursor interpolation.
-     * This gives the object that delayed,
-     * liquid-following feeling.
+     *
+     * Deliberately slow so the object feels heavy and
+     * physical rather than attached directly to the mouse.
      */
     mouse.current.x = THREE.MathUtils.lerp(
       mouse.current.x,
       targetMouse.current.x,
-      0.035
+      0.045
     );
 
     mouse.current.y = THREE.MathUtils.lerp(
       mouse.current.y,
       targetMouse.current.y,
-      0.035
+      0.045
     );
 
     scroll.current = THREE.MathUtils.lerp(
       scroll.current,
       scrollTarget.current,
-      0.04
+      0.035
     );
 
     const mx = mouse.current.x;
     const my = mouse.current.y;
 
-    /*
-     * Base movement.
-     *
-     * Reduced motion still leaves the object visible,
-     * but removes the continuous animation.
-     */
     const motionMultiplier = reducedMotion.current
       ? 0
       : 1;
 
     /*
-     * Slow, organic rotation.
+     * ---------------------------------------------------------
+     * 3D ORBITAL MOVEMENT
+     * ---------------------------------------------------------
+     *
+     * Rather than keeping the object locked to the centre,
+     * it gently travels around a small invisible 3D path.
+     *
+     * The movement is deliberately tiny.
      */
-    group.current.rotation.y =
-      time * 0.055 * motionMultiplier +
-      mx * 0.45;
+    const orbitalX =
+      Math.sin(time * 0.16) *
+      0.18 *
+      motionMultiplier;
 
-    group.current.rotation.x =
-      Math.sin(time * 0.22) * 0.08 * motionMultiplier +
-      my * -0.3;
+    const orbitalY =
+      Math.cos(time * 0.21) *
+      0.13 *
+      motionMultiplier;
 
-    group.current.rotation.z =
-      Math.cos(time * 0.18) * 0.045 * motionMultiplier;
+    const orbitalZ =
+      Math.sin(time * 0.13) *
+      0.08 *
+      motionMultiplier;
 
     /*
-     * Scroll subtly rotates the object.
-     * The effect is deliberately restrained.
+     * Cursor creates a second, slower positional layer.
+     *
+     * This makes the object feel like it occupies space
+     * behind the page rather than being a flat animation.
      */
-    group.current.rotation.y +=
-      scroll.current * 0.00035;
+    const cursorOffsetX =
+      mx * 0.18 * motionMultiplier;
 
-    /*
-     * The entire object slowly breathes.
-     */
-    const breathing =
-      1 +
-      Math.sin(time * 0.7) *
-        0.035 *
-        motionMultiplier;
+    const cursorOffsetY =
+      -my * 0.12 * motionMultiplier;
 
-    group.current.scale.set(
-      breathing,
-      breathing,
-      breathing
+    targetPosition.set(
+      orbitalX + cursorOffsetX,
+      orbitalY + cursorOffsetY,
+      orbitalZ
+    );
+
+    group.current.position.lerp(
+      targetPosition,
+      0.025
     );
 
     /*
-     * ORGANIC DEFORMATION
+     * ---------------------------------------------------------
+     * CONTINUOUS 3D ROTATION
+     * ---------------------------------------------------------
      *
-     * Instead of leaving the icosahedron rigid,
-     * each vertex gets a subtle noise-like displacement.
+     * Multiple rotation axes create the feeling of a genuine
+     * three-dimensional object rather than a rotating icon.
+     */
+    group.current.rotation.y =
+      time * 0.075 * motionMultiplier +
+      mx * 0.42;
+
+    group.current.rotation.x =
+      Math.sin(time * 0.19) *
+        0.11 *
+        motionMultiplier +
+      my * -0.28;
+
+    group.current.rotation.z =
+      Math.cos(time * 0.16) *
+        0.055 *
+        motionMultiplier +
+      mx * 0.08;
+
+    /*
+     * Scroll adds a very subtle change to the object's
+     * orientation without making the hero feel unstable.
+     */
+    group.current.rotation.y +=
+      scroll.current * 0.00022;
+
+    group.current.rotation.x +=
+      scroll.current * 0.000035;
+
+    /*
+     * ---------------------------------------------------------
+     * BREATHING / DEPTH
+     * ---------------------------------------------------------
+     */
+    const breathing =
+      1 +
+      Math.sin(time * 0.62) *
+        0.035 *
+        motionMultiplier;
+
+    const depthPulse =
+      1 +
+      Math.cos(time * 0.42) *
+        0.012 *
+        motionMultiplier;
+
+    const finalScale =
+      responsiveScale *
+      breathing *
+      depthPulse;
+
+    group.current.scale.setScalar(finalScale);
+
+    /*
+     * ---------------------------------------------------------
+     * ORGANIC SURFACE DEFORMATION
+     * ---------------------------------------------------------
      */
     const position = geometry.attributes.position;
+
     const original =
-      geometry.userData.originalPositions as Float32Array;
+      geometry.userData
+        .originalPositions as Float32Array;
+
+    /*
+     * Reuse the same vector rather than creating a new
+     * THREE.Vector3 for every vertex on every frame.
+     */
+    cursorDirection.set(
+      mx * 1.4,
+      -my * 1.4,
+      0.8
+    ).normalize();
 
     for (
       let i = 0;
@@ -192,7 +301,9 @@ function AbstractObject() {
       const oz = original[index + 2];
 
       const length = Math.sqrt(
-        ox * ox + oy * oy + oz * oz
+        ox * ox +
+          oy * oy +
+          oz * oz
       );
 
       const nx = ox / length;
@@ -200,53 +311,37 @@ function AbstractObject() {
       const nz = oz / length;
 
       /*
-       * Multiple waves overlap here to create
-       * a soft liquid deformation rather than
-       * an obvious mathematical wobble.
+       * Three slow waves overlap to create an organic
+       * surface movement.
        */
       const wave1 =
         Math.sin(
           ox * 2.8 +
             time * 0.65
-        ) *
-        0.035;
+        ) * 0.035;
 
       const wave2 =
         Math.sin(
           oy * 3.4 -
             time * 0.5
-        ) *
-        0.025;
+        ) * 0.025;
 
       const wave3 =
         Math.sin(
           oz * 4.1 +
             time * 0.35
-        ) *
-        0.02;
+        ) * 0.02;
 
       /*
-       * Cursor proximity pushes the surface.
-       *
-       * The mouse is translated into a rough 3D
-       * direction so the object feels like it's
-       * reacting to the pointer.
+       * Cursor pushes the visible side of the object.
        */
-      const cursorDirection = new THREE.Vector3(
-        mx * 1.4,
-        -my * 1.4,
-        0.8
-      ).normalize();
-
       const dot =
         nx * cursorDirection.x +
         ny * cursorDirection.y +
         nz * cursorDirection.z;
 
-      const cursorInfluence = Math.max(
-        0,
-        dot
-      );
+      const cursorInfluence =
+        Math.max(0, dot);
 
       const cursorDeformation =
         cursorInfluence *
@@ -254,10 +349,13 @@ function AbstractObject() {
         0.13;
 
       const displacement =
-        wave1 +
-        wave2 +
-        wave3 +
-        cursorDeformation;
+        (
+          wave1 +
+          wave2 +
+          wave3 +
+          cursorDeformation
+        ) *
+        motionMultiplier;
 
       position.setXYZ(
         i,
@@ -270,21 +368,41 @@ function AbstractObject() {
     position.needsUpdate = true;
 
     /*
-     * Slight secondary orbit.
+     * ---------------------------------------------------------
+     * SECONDARY ORBITAL SHELL
+     * ---------------------------------------------------------
      */
     if (secondaryMesh.current) {
       secondaryMesh.current.rotation.x =
-        -time * 0.09 * motionMultiplier;
+        -time *
+          0.105 *
+          motionMultiplier;
 
       secondaryMesh.current.rotation.y =
-        time * 0.07 * motionMultiplier;
+        time *
+          0.08 *
+          motionMultiplier;
 
       secondaryMesh.current.rotation.z =
-        mx * 0.2;
+        mx * 0.22;
+
+      /*
+       * The outer shell also moves very slightly
+       * independently, creating parallax between the layers.
+       */
+      secondaryMesh.current.position.x =
+        Math.sin(time * 0.12) *
+        0.035 *
+        motionMultiplier;
+
+      secondaryMesh.current.position.y =
+        Math.cos(time * 0.15) *
+        0.025 *
+        motionMultiplier;
 
       const secondaryScale =
         1 +
-        Math.sin(time * 0.45) *
+        Math.sin(time * 0.43) *
           0.025 *
           motionMultiplier;
 
@@ -299,7 +417,9 @@ function AbstractObject() {
       ref={group}
       position={[0, 0, 0]}
     >
-      {/* Main living object */}
+      {/*
+       * MAIN LIVING OBJECT
+       */}
       <mesh
         ref={mesh}
         geometry={geometry}
@@ -315,7 +435,9 @@ function AbstractObject() {
         />
       </mesh>
 
-      {/* Larger, quieter orbital structure */}
+      {/*
+       * SECONDARY DEPTH SHELL
+       */}
       <mesh
         ref={secondaryMesh}
         geometry={secondaryGeometry}
@@ -330,9 +452,14 @@ function AbstractObject() {
         />
       </mesh>
 
-      {/* Small internal glow */}
+      {/*
+       * VERY SUBTLE INTERNAL VOLUME
+       */}
       <mesh scale={0.82}>
-        <sphereGeometry args={[1, 32, 32]} />
+        <sphereGeometry
+          args={[1, 24, 24]}
+        />
+
         <meshBasicMaterial
           color="#dce8e0"
           transparent
@@ -366,7 +493,7 @@ export default function HeroWebGL() {
           position: [0, 0, 5],
           fov: 45,
         }}
-        dpr={[1, 1.5]}
+        dpr={[1, 1.25]}
         gl={{
           antialias: false,
           alpha: true,
@@ -374,23 +501,37 @@ export default function HeroWebGL() {
           stencil: false,
           depth: true,
         }}
+        performance={{
+          min: 0.7,
+        }}
       >
         <Scene />
       </Canvas>
 
-      {/* Atmospheric bloom around the object */}
+      {/*
+       * ATMOSPHERIC BLOOM
+       *
+       * Smaller on mobile so it doesn't wash over the
+       * typography or make the hero feel cramped.
+       */}
       <div
         className="
           pointer-events-none
           absolute
           left-1/2
           top-1/2
-          h-[34rem]
-          w-[34rem]
+          h-[24rem]
+          w-[24rem]
           -translate-x-1/2
           -translate-y-1/2
           rounded-full
-          blur-[110px]
+          blur-[90px]
+          sm:h-[30rem]
+          sm:w-[30rem]
+          sm:blur-[100px]
+          md:h-[34rem]
+          md:w-[34rem]
+          md:blur-[110px]
         "
         style={{
           background:
@@ -398,19 +539,27 @@ export default function HeroWebGL() {
         }}
       />
 
-      {/* Very subtle centre glow */}
+      {/*
+       * CENTRE GLOW
+       */}
       <div
         className="
           pointer-events-none
           absolute
           left-1/2
           top-1/2
-          h-32
-          w-32
+          h-24
+          w-24
           -translate-x-1/2
           -translate-y-1/2
           rounded-full
-          blur-[50px]
+          blur-[38px]
+          sm:h-28
+          sm:w-28
+          sm:blur-[44px]
+          md:h-32
+          md:w-32
+          md:blur-[50px]
         "
         style={{
           background:
