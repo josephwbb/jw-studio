@@ -1,1199 +1,442 @@
 "use client";
 
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 
-type MouseState = {
+type PointerState = {
   x: number;
   y: number;
 };
 
-function AbstractObject() {
+function HeroObject() {
   const group = useRef<THREE.Group>(null);
-  const mesh = useRef<THREE.Mesh>(null);
-  const secondaryMesh = useRef<THREE.Mesh>(null);
-  const ringGroup = useRef<THREE.Group>(null);
-  const constructionGroup = useRef<THREE.Group>(null);
+  const core = useRef<THREE.Mesh>(null);
+  const shell = useRef<THREE.Mesh>(null);
+  const ring = useRef<THREE.Mesh>(null);
 
-  const mainMaterial = useRef<THREE.MeshBasicMaterial>(null);
-  const secondaryMaterial = useRef<THREE.MeshBasicMaterial>(null);
-  const innerMaterial = useRef<THREE.MeshBasicMaterial>(null);
+  const pointer = useRef<PointerState>({ x: 0, y: 0 });
+  const targetPointer = useRef<PointerState>({ x: 0, y: 0 });
 
-  const mouse = useRef<MouseState>({ x: 0, y: 0 });
-  const targetMouse = useRef<MouseState>({ x: 0, y: 0 });
-
-  const scrollTarget = useRef(0);
-  const scroll = useRef(0);
-
+  const intro = useRef(0);
   const reducedMotion = useRef(false);
-
-  const cursorDirection = useMemo(
-    () => new THREE.Vector3(),
-    []
-  );
-
-  const targetPosition = useMemo(
-    () => new THREE.Vector3(),
-    []
-  );
 
   const viewport = useThree((state) => state.viewport);
 
-  const isMobile = viewport.width < 5;
+  const targetPosition = useMemo(() => new THREE.Vector3(), []);
+  const cursorDirection = useMemo(() => new THREE.Vector3(), []);
 
   /*
-   * ---------------------------------------------------------
-   * INPUT SYSTEM
-   *
-   * Cursor behaviour deliberately preserved.
-   * ---------------------------------------------------------
+   * The main object is deliberately less dense than the previous
+   * version. The shape should read as a piece of digital sculpture,
+   * not a giant technical diagram.
    */
+  const geometry = useMemo(() => {
+    const geo = new THREE.IcosahedronGeometry(1.35, 3);
+
+    const position = geo.attributes.position;
+    const original = new Float32Array(position.array.length);
+    original.set(position.array);
+
+    geo.userData.originalPositions = original;
+
+    return geo;
+  }, []);
+
+  const shellGeometry = useMemo(
+    () => new THREE.IcosahedronGeometry(1.58, 2),
+    []
+  );
+
+  const ringGeometry = useMemo(
+    () => new THREE.TorusGeometry(1.62, 0.006, 8, 96),
+    []
+  );
+
+  const isMobile = viewport.width < 5;
+
+  const responsiveScale = isMobile
+    ? 0.58
+    : viewport.width < 7
+      ? 0.76
+      : 0.9;
 
   useEffect(() => {
-    const handleMouseMove = (event: MouseEvent) => {
-      targetMouse.current.x =
-        event.clientX / window.innerWidth - 0.5;
-
-      targetMouse.current.y =
-        event.clientY / window.innerHeight - 0.5;
-    };
-
-    const handleScroll = () => {
-      scrollTarget.current = window.scrollY;
-    };
-
     const mediaQuery = window.matchMedia(
       "(prefers-reduced-motion: reduce)"
     );
 
-    const handleMotionPreference = () => {
+    reducedMotion.current = mediaQuery.matches;
+
+    const handleMotion = () => {
       reducedMotion.current = mediaQuery.matches;
     };
 
-    handleMotionPreference();
-
-    window.addEventListener("mousemove", handleMouseMove, {
-      passive: true,
-    });
-
-    window.addEventListener("scroll", handleScroll, {
-      passive: true,
-    });
-
-    mediaQuery.addEventListener(
-      "change",
-      handleMotionPreference
-    );
+    mediaQuery.addEventListener("change", handleMotion);
 
     return () => {
-      window.removeEventListener(
-        "mousemove",
-        handleMouseMove
-      );
-
-      window.removeEventListener("scroll", handleScroll);
-
-      mediaQuery.removeEventListener(
-        "change",
-        handleMotionPreference
-      );
+      mediaQuery.removeEventListener("change", handleMotion);
     };
   }, []);
 
-  /*
-   * ---------------------------------------------------------
-   * MAIN FORM
-   *
-   * Desktop keeps the detailed geometry.
-   *
-   * Mobile uses a single subdivision level. This is
-   * intentionally much cheaper to animate.
-   * ---------------------------------------------------------
-   */
+  useEffect(() => {
+    const handlePointerMove = (event: PointerEvent) => {
+      targetPointer.current.x =
+        event.clientX / window.innerWidth - 0.5;
 
-  const geometry = useMemo(() => {
-    const geo = new THREE.IcosahedronGeometry(
-      1.55,
-      isMobile ? 1 : 4
-    );
-
-    if (!isMobile) {
-      const position = geo.attributes.position;
-
-      const original = new Float32Array(
-        position.array.length
-      );
-
-      original.set(position.array);
-
-      geo.userData.originalPositions = original;
-
-      /*
-       * Pre-calculate the vertex normals used by the
-       * desktop deformation system.
-       *
-       * This removes square-root work from every frame.
-       */
-      const directions = new Float32Array(
-        position.count * 3
-      );
-
-      for (let i = 0; i < position.count; i++) {
-        const index = i * 3;
-
-        const x = original[index];
-        const y = original[index + 1];
-        const z = original[index + 2];
-
-        const length = Math.sqrt(
-          x * x +
-            y * y +
-            z * z
-        );
-
-        directions[index] = x / length;
-        directions[index + 1] = y / length;
-        directions[index + 2] = z / length;
-      }
-
-      geo.userData.vertexDirections = directions;
-    }
-
-    return geo;
-  }, [isMobile]);
-
-  /*
-   * ---------------------------------------------------------
-   * SECONDARY SHELL
-   *
-   * Desktop gets the extra depth layer.
-   * Mobile gets a very light shell.
-   * ---------------------------------------------------------
-   */
-
-  const secondaryGeometry = useMemo(() => {
-    return new THREE.IcosahedronGeometry(
-      1.76,
-      isMobile ? 0 : 2
-    );
-  }, [isMobile]);
-
-  /*
-   * ---------------------------------------------------------
-   * PRIMARY ORBITAL RING
-   * ---------------------------------------------------------
-   */
-
-  const ringGeometry = useMemo(() => {
-    const geometry = new THREE.BufferGeometry();
-
-    const points: number[] = [];
-
-    const segments = isMobile ? 32 : 128;
-
-    for (let i = 0; i <= segments; i++) {
-      const angle =
-        (i / segments) * Math.PI * 2;
-
-      points.push(
-        Math.cos(angle) * 2.15,
-        Math.sin(angle) * 2.15,
-        0
-      );
-    }
-
-    geometry.setAttribute(
-      "position",
-      new THREE.Float32BufferAttribute(
-        points,
-        3
-      )
-    );
-
-    return geometry;
-  }, [isMobile]);
-
-  /*
-   * ---------------------------------------------------------
-   * SECONDARY ORBITAL RING
-   *
-   * Desktop only.
-   * ---------------------------------------------------------
-   */
-
-  const secondaryRingGeometry = useMemo(() => {
-    const geometry = new THREE.BufferGeometry();
-
-    const points: number[] = [];
-
-    const segments = 64;
-
-    for (let i = 0; i <= segments; i++) {
-      const angle =
-        (i / segments) * Math.PI * 2;
-
-      points.push(
-        Math.cos(angle) * 2.55,
-        Math.sin(angle) * 2.55,
-        0
-      );
-    }
-
-    geometry.setAttribute(
-      "position",
-      new THREE.Float32BufferAttribute(
-        points,
-        3
-      )
-    );
-
-    return geometry;
-  }, []);
-
-  /*
-   * ---------------------------------------------------------
-   * CONSTRUCTION AXES
-   *
-   * Mobile receives only the central cross.
-   * Desktop gets the full technical drawing.
-   * ---------------------------------------------------------
-   */
-
-  const constructionGeometry = useMemo(() => {
-    const positions: number[] = [];
-
-    const addLine = (
-      x1: number,
-      y1: number,
-      z1: number,
-      x2: number,
-      y2: number,
-      z2: number
-    ) => {
-      positions.push(
-        x1,
-        y1,
-        z1,
-        x2,
-        y2,
-        z2
-      );
+      targetPointer.current.y =
+        event.clientY / window.innerHeight - 0.5;
     };
 
-    const size = isMobile ? 1.65 : 2.35;
+    window.addEventListener("pointermove", handlePointerMove, {
+      passive: true,
+    });
 
-    addLine(
-      -size,
-      0,
-      0,
-      size,
-      0,
-      0
-    );
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+    };
+  }, []);
 
-    addLine(
-      0,
-      -size,
-      0,
-      0,
-      size,
-      0
-    );
+  useFrame((state, delta) => {
+    if (!group.current || !core.current) return;
 
-    if (!isMobile) {
-      addLine(
-        0,
-        0,
-        -size,
-        0,
-        0,
-        size
-      );
-
-      addLine(
-        -size * 0.72,
-        -size * 0.72,
-        0,
-        size * 0.72,
-        size * 0.72,
-        0
-      );
-
-      addLine(
-        -size * 0.72,
-        size * 0.72,
-        0,
-        size * 0.72,
-        -size * 0.72,
-        0
-      );
-    }
-
-    const geometry = new THREE.BufferGeometry();
-
-    geometry.setAttribute(
-      "position",
-      new THREE.Float32BufferAttribute(
-        positions,
-        3
-      )
-    );
-
-    return geometry;
-  }, [isMobile]);
-
-  /*
-   * ---------------------------------------------------------
-   * RESPONSIVE SCALE
-   * ---------------------------------------------------------
-   */
-
-  const responsiveScale =
-    viewport.width < 5
-      ? 0.66
-      : viewport.width < 7
-        ? 0.88
-        : 1;
-
-  /*
-   * ---------------------------------------------------------
-   * ANIMATION
-   * ---------------------------------------------------------
-   */
-
-  useFrame((state) => {
-    if (!group.current || !mesh.current) {
-      return;
-    }
-
-    const time =
-      state.clock.getElapsedTime();
-
-    const motionMultiplier =
-      reducedMotion.current
-        ? 0
-        : 1;
+    const time = state.clock.getElapsedTime();
+    const motion = reducedMotion.current ? 0 : 1;
 
     /*
-     * -------------------------------------------------------
-     * CURSOR
+     * Quick initial assembly.
      *
-     * Preserved.
-     * -------------------------------------------------------
+     * The object begins almost collapsed and expands into place.
+     * This is intentionally short so it feels like a design
+     * transition rather than a loading animation.
      */
+    intro.current = THREE.MathUtils.damp(
+      intro.current,
+      1,
+      3.8,
+      delta
+    );
 
-    mouse.current.x =
-      THREE.MathUtils.lerp(
-        mouse.current.x,
-        targetMouse.current.x,
-        0.045
-      );
+    const introEase = THREE.MathUtils.smoothstep(
+      intro.current,
+      0,
+      1
+    );
 
-    mouse.current.y =
-      THREE.MathUtils.lerp(
-        mouse.current.y,
-        targetMouse.current.y,
-        0.045
-      );
+    pointer.current.x = THREE.MathUtils.lerp(
+      pointer.current.x,
+      targetPointer.current.x,
+      0.055
+    );
 
-    scroll.current =
-      THREE.MathUtils.lerp(
-        scroll.current,
-        scrollTarget.current,
-        0.035
-      );
+    pointer.current.y = THREE.MathUtils.lerp(
+      pointer.current.y,
+      targetPointer.current.y,
+      0.055
+    );
 
-    const mx = mouse.current.x;
-    const my = mouse.current.y;
+    const mx = pointer.current.x;
+    const my = pointer.current.y;
 
     /*
-     * -------------------------------------------------------
-     * LOAD-IN
-     *
-     * Mobile deliberately takes longer.
-     *
-     * The point is not to make the phone wait.
-     * The point is to let the lighter object reveal itself
-     * gradually once it arrives.
-     * -------------------------------------------------------
+     * The object slowly floats, but the movement is intentionally
+     * restrained. It should support the typography rather than
+     * becoming the entire website.
      */
+    const floatX =
+      Math.sin(time * 0.32) * 0.055 * motion;
 
-    const buildDuration =
-      isMobile ? 2.4 : 1.65;
+    const floatY =
+      Math.cos(time * 0.27) * 0.075 * motion;
 
-    const buildProgress =
-      THREE.MathUtils.clamp(
-        time / buildDuration,
-        0,
-        1
-      );
+    const cursorX =
+      mx * 0.12 * motion;
 
-    const easedBuild =
-      1 -
-      Math.pow(
-        1 - buildProgress,
-        isMobile ? 3 : 4
-      );
-
-    const buildOvershoot =
-      buildProgress < 1
-        ? Math.sin(
-            buildProgress * Math.PI
-          ) *
-          (isMobile ? 0.025 : 0.045)
-        : 0;
-
-    const buildScale =
-      easedBuild +
-      buildOvershoot;
-
-    /*
-     * -------------------------------------------------------
-     * POSITION
-     *
-     * Mobile has a slower, calmer orbital movement.
-     * -------------------------------------------------------
-     */
-
-    const orbitalX =
-      Math.sin(
-        time *
-          (isMobile ? 0.09 : 0.16)
-      ) *
-      (isMobile ? 0.08 : 0.18) *
-      motionMultiplier;
-
-    const orbitalY =
-      Math.cos(
-        time *
-          (isMobile ? 0.12 : 0.21)
-      ) *
-      (isMobile ? 0.06 : 0.13) *
-      motionMultiplier;
-
-    const orbitalZ =
-      Math.sin(
-        time *
-          (isMobile ? 0.08 : 0.13)
-      ) *
-      (isMobile ? 0.035 : 0.08) *
-      motionMultiplier;
-
-    const cursorOffsetX =
-      mx *
-      (isMobile ? 0.08 : 0.18) *
-      motionMultiplier;
-
-    const cursorOffsetY =
-      -my *
-      (isMobile ? 0.06 : 0.12) *
-      motionMultiplier;
+    const cursorY =
+      -my * 0.08 * motion;
 
     targetPosition.set(
-      orbitalX + cursorOffsetX,
-      orbitalY + cursorOffsetY,
-      orbitalZ
+      floatX + cursorX,
+      floatY + cursorY,
+      0
     );
 
     group.current.position.lerp(
       targetPosition,
-      isMobile ? 0.018 : 0.025
+      0.035
     );
 
     /*
-     * -------------------------------------------------------
-     * ROTATION
-     * -------------------------------------------------------
+     * Subtle physical rotation.
      */
-
     group.current.rotation.y =
-      time *
-        (isMobile ? 0.045 : 0.075) *
-        motionMultiplier +
-      mx * 0.42;
+      time * 0.095 * motion +
+      mx * 0.3;
 
     group.current.rotation.x =
-      Math.sin(
-        time *
-          (isMobile ? 0.11 : 0.19)
-      ) *
-        (isMobile ? 0.055 : 0.11) *
-        motionMultiplier +
-      my * -0.28;
+      Math.sin(time * 0.22) *
+        0.055 *
+        motion -
+      my * 0.18;
 
     group.current.rotation.z =
-      Math.cos(
-        time *
-          (isMobile ? 0.09 : 0.16)
-      ) *
-        (isMobile ? 0.025 : 0.055) *
-        motionMultiplier +
-      mx * 0.08;
+      Math.cos(time * 0.18) *
+        0.025 *
+        motion;
 
     /*
-     * Scroll influence remains subtle.
+     * Build from the centre.
      */
-
-    group.current.rotation.y +=
-      scroll.current * 0.00022;
-
-    group.current.rotation.x +=
-      scroll.current * 0.000035;
-
-    /*
-     * -------------------------------------------------------
-     * BREATHING
-     * -------------------------------------------------------
-     */
-
     const breathing =
       1 +
-      Math.sin(
-        time *
-          (isMobile ? 0.42 : 0.62)
-      ) *
-        (isMobile ? 0.018 : 0.035) *
-        motionMultiplier;
+      Math.sin(time * 0.7) *
+        0.025 *
+        motion;
 
-    const depthPulse =
-      1 +
-      Math.cos(
-        time *
-          (isMobile ? 0.28 : 0.42)
-      ) *
-        (isMobile ? 0.007 : 0.012) *
-        motionMultiplier;
+    const buildScale =
+      THREE.MathUtils.lerp(
+        0.08,
+        1,
+        introEase
+      );
 
     group.current.scale.setScalar(
       responsiveScale *
         breathing *
-        depthPulse *
         buildScale
     );
 
     /*
-     * -------------------------------------------------------
-     * DESKTOP ORGANIC DEFORMATION
+     * Organic surface deformation.
      *
-     * This is the expensive part.
-     *
-     * It is completely removed from the mobile animation
-     * loop. Mobile still has the rotating crystalline form,
-     * but does not make the CPU rewrite every vertex.
-     * -------------------------------------------------------
+     * Desktop gets the full treatment.
+     * Mobile gets a much cheaper and calmer version.
      */
+    const position = geometry.attributes.position;
 
-    if (!isMobile) {
-      const position =
-        geometry.attributes.position;
+    const original =
+      geometry.userData.originalPositions as Float32Array;
 
-      const original =
-        geometry.userData
-          .originalPositions as Float32Array;
+    cursorDirection
+      .set(mx, -my, 0.75)
+      .normalize();
 
-      const directions =
-        geometry.userData
-          .vertexDirections as Float32Array;
+    const vertexCount = position.count;
 
-      cursorDirection.set(
-        mx * 1.4,
-        -my * 1.4,
-        0.8
-      ).normalize();
+    for (let i = 0; i < vertexCount; i++) {
+      const index = i * 3;
 
-      for (
-        let i = 0;
-        i < position.count;
-        i++
-      ) {
-        const index = i * 3;
+      const ox = original[index];
+      const oy = original[index + 1];
+      const oz = original[index + 2];
 
-        const ox =
-          original[index];
+      const length = Math.sqrt(
+        ox * ox +
+          oy * oy +
+          oz * oz
+      );
 
-        const oy =
-          original[index + 1];
+      const nx = ox / length;
+      const ny = oy / length;
+      const nz = oz / length;
 
-        const oz =
-          original[index + 2];
-
-        const nx =
-          directions[index];
-
-        const ny =
-          directions[index + 1];
-
-        const nz =
-          directions[index + 2];
-
-        const wave1 =
-          Math.sin(
-            ox * 2.8 +
-              time * 0.65
-          ) *
-          0.035;
-
-        const wave2 =
-          Math.sin(
-            oy * 3.4 -
-              time * 0.5
-          ) *
-          0.025;
-
-        const wave3 =
-          Math.sin(
-            oz * 4.1 +
-              time * 0.35
-          ) *
-          0.02;
-
-        const dot =
-          nx *
-            cursorDirection.x +
-          ny *
-            cursorDirection.y +
-          nz *
-            cursorDirection.z;
-
-        const cursorInfluence =
-          Math.max(0, dot);
-
-        const cursorDeformation =
-          cursorInfluence *
-          cursorInfluence *
-          0.13;
-
-        const displacement =
-          (
-            wave1 +
-            wave2 +
-            wave3 +
-            cursorDeformation
-          ) *
-          motionMultiplier;
-
-        position.setXYZ(
-          i,
-          ox + nx * displacement,
-          oy + ny * displacement,
-          oz + nz * displacement
-        );
-      }
-
-      position.needsUpdate = true;
-    }
-
-    /*
-     * -------------------------------------------------------
-     * SECONDARY SHELL
-     * -------------------------------------------------------
-     */
-
-    if (secondaryMesh.current) {
-      secondaryMesh.current.rotation.x =
-        -time *
-        (isMobile ? 0.035 : 0.105) *
-        motionMultiplier;
-
-      secondaryMesh.current.rotation.y =
-        time *
-        (isMobile ? 0.025 : 0.08) *
-        motionMultiplier;
-
-      secondaryMesh.current.rotation.z =
-        mx * 0.22;
-
-      if (!isMobile) {
-        secondaryMesh.current.position.x =
-          Math.sin(time * 0.12) *
-          0.035 *
-          motionMultiplier;
-
-        secondaryMesh.current.position.y =
-          Math.cos(time * 0.15) *
-          0.025 *
-          motionMultiplier;
-
-        secondaryMesh.current.scale.setScalar(
-          1 +
-            Math.sin(time * 0.43) *
-              0.025 *
-              motionMultiplier
-        );
-      }
-    }
-
-    /*
-     * -------------------------------------------------------
-     * ORBITAL SYSTEM
-     * -------------------------------------------------------
-     */
-
-    if (ringGroup.current) {
-      ringGroup.current.rotation.x =
+      const baseWave =
         Math.sin(
-          time *
-            (isMobile ? 0.08 : 0.17)
+          ox * 2.6 +
+            time * 0.5
+        ) * 0.025;
+
+      const secondWave = isMobile
+        ? 0
+        : Math.sin(
+            oy * 3.2 -
+              time * 0.42
+          ) * 0.018;
+
+      const cursorInfluence =
+        Math.max(
+          0,
+          nx * cursorDirection.x +
+            ny * cursorDirection.y +
+            nz * cursorDirection.z
+        );
+
+      const cursorDeformation = isMobile
+        ? cursorInfluence * 0.035
+        : cursorInfluence *
+          cursorInfluence *
+          0.075;
+
+      const displacement =
+        (
+          baseWave +
+          secondWave +
+          cursorDeformation
         ) *
-        (isMobile ? 0.12 : 0.25) *
-        motionMultiplier;
+        motion;
 
-      ringGroup.current.rotation.y =
+      position.setXYZ(
+        i,
+        ox + nx * displacement,
+        oy + ny * displacement,
+        oz + nz * displacement
+      );
+    }
+
+    position.needsUpdate = true;
+
+    /*
+     * Outer shell.
+     */
+    if (shell.current) {
+      shell.current.rotation.x =
+        -time *
+          (isMobile ? 0.025 : 0.055) *
+          motion;
+
+      shell.current.rotation.y =
         time *
-        (isMobile ? 0.018 : 0.055) *
-        motionMultiplier;
+          (isMobile ? 0.035 : 0.065) *
+          motion;
 
-      ringGroup.current.rotation.z =
+      shell.current.rotation.z =
         mx * 0.12;
 
-      ringGroup.current.scale.setScalar(
-        THREE.MathUtils.lerp(
-          isMobile ? 0.65 : 0.45,
-          1,
-          easedBuild
-        )
+      const shellScale =
+        1 +
+        Math.sin(time * 0.38) *
+          (isMobile ? 0.012 : 0.022) *
+          motion;
+
+      shell.current.scale.setScalar(
+        shellScale
       );
     }
 
     /*
-     * -------------------------------------------------------
-     * CONSTRUCTION SYSTEM
-     * -------------------------------------------------------
+     * Fine orbital ring.
      */
+    if (ring.current) {
+      ring.current.rotation.x =
+        Math.PI * 0.28 +
+        Math.sin(time * 0.2) *
+          0.08 *
+          motion;
 
-    if (constructionGroup.current) {
-      constructionGroup.current.rotation.x =
-        -time *
-        (isMobile ? 0.012 : 0.04) *
-        motionMultiplier;
-
-      constructionGroup.current.rotation.y =
+      ring.current.rotation.y =
         time *
-        (isMobile ? 0.018 : 0.055) *
-        motionMultiplier;
+          (isMobile ? 0.04 : 0.075) *
+          motion;
 
-      constructionGroup.current.rotation.z =
-        -mx * 0.08;
+      ring.current.rotation.z =
+        mx * 0.15;
 
-      constructionGroup.current.scale.setScalar(
-        THREE.MathUtils.lerp(
-          isMobile ? 0.5 : 0.25,
-          1,
-          easedBuild
-        )
+      ring.current.scale.setScalar(
+        0.96 +
+          Math.sin(time * 0.55) *
+            0.015 *
+            motion
       );
     }
 
     /*
-     * -------------------------------------------------------
-     * MATERIAL ASSEMBLY
-     * -------------------------------------------------------
+     * Core material subtly changes opacity during assembly.
      */
+    const coreMaterial =
+      core.current.material as THREE.MeshBasicMaterial;
 
-    if (mainMaterial.current) {
-      mainMaterial.current.opacity =
-        THREE.MathUtils.lerp(
-          0,
-          isMobile ? 0.15 : 0.21,
-          easedBuild
-        );
-    }
+    coreMaterial.opacity =
+      0.13 +
+      introEase * 0.035;
 
-    if (secondaryMaterial.current) {
-      secondaryMaterial.current.opacity =
-        THREE.MathUtils.lerp(
-          0,
-          isMobile ? 0.025 : 0.06,
-          easedBuild
-        );
-    }
+    if (shell.current) {
+      const shellMaterial =
+        shell.current.material as THREE.MeshBasicMaterial;
 
-    if (innerMaterial.current) {
-      innerMaterial.current.opacity =
-        THREE.MathUtils.lerp(
-          0,
-          isMobile ? 0.008 : 0.022,
-          easedBuild
-        );
+      shellMaterial.opacity =
+        0.025 +
+        introEase * 0.035;
     }
   });
 
   return (
-    <group
-      ref={group}
-      position={[0, 0, 0]}
-    >
-      {/*
-       * -------------------------------------------------------
-       * CONSTRUCTION SYSTEM
-       * -------------------------------------------------------
-       */}
-
-      <group ref={constructionGroup}>
-        <lineSegments
-          geometry={constructionGeometry}
-        >
-          <lineBasicMaterial
-            color="#dce8e0"
-            transparent
-            opacity={isMobile ? 0.035 : 0.055}
-            depthWrite={false}
-          />
-        </lineSegments>
-
-        {!isMobile && (
-          <>
-            <mesh
-              position={[0, 0, 0]}
-              rotation={[
-                Math.PI / 2,
-                0,
-                0,
-              ]}
-            >
-              <ringGeometry
-                args={[
-                  1.64,
-                  1.645,
-                  96,
-                ]}
-              />
-
-              <meshBasicMaterial
-                color="#dce8e0"
-                transparent
-                opacity={0.055}
-                depthWrite={false}
-              />
-            </mesh>
-
-            <mesh
-              position={[0, 0, 0]}
-              rotation={[
-                0,
-                Math.PI / 2,
-                0,
-              ]}
-            >
-              <ringGeometry
-                args={[
-                  1.64,
-                  1.645,
-                  96,
-                ]}
-              />
-
-              <meshBasicMaterial
-                color="#dce8e0"
-                transparent
-                opacity={0.035}
-                depthWrite={false}
-              />
-            </mesh>
-          </>
-        )}
-      </group>
-
-      {/*
-       * -------------------------------------------------------
-       * MAIN LIVING OBJECT
-       * -------------------------------------------------------
-       */}
-
+    <group ref={group}>
       <mesh
-        ref={mesh}
+        ref={core}
         geometry={geometry}
-        scale={1.05}
+        scale={1.02}
       >
         <meshBasicMaterial
-          ref={mainMaterial}
           color="#dce8e0"
           transparent
-          opacity={0.17}
+          opacity={0.15}
           wireframe
           depthWrite={false}
           blending={THREE.AdditiveBlending}
         />
       </mesh>
 
-      {/*
-       * -------------------------------------------------------
-       * SECONDARY DEPTH SHELL
-       * -------------------------------------------------------
-       */}
-
       <mesh
-        ref={secondaryMesh}
-        geometry={secondaryGeometry}
-        scale={isMobile ? 0.96 : 1}
+        ref={shell}
+        geometry={shellGeometry}
       >
         <meshBasicMaterial
-          ref={secondaryMaterial}
-          color="#aabdb2"
+          color="#a9bdb1"
           transparent
-          opacity={0.055}
+          opacity={0.045}
           wireframe
           depthWrite={false}
           blending={THREE.AdditiveBlending}
         />
       </mesh>
 
-      {/*
-       * -------------------------------------------------------
-       * INTERNAL VOLUME
-       *
-       * Mobile uses a tiny primitive.
-       * -------------------------------------------------------
-       */}
-
       <mesh
-        scale={
-          isMobile
-            ? 0.76
-            : 0.82
-        }
+        ref={ring}
+        geometry={ringGeometry}
+        rotation={[
+          Math.PI * 0.28,
+          0,
+          0,
+        ]}
       >
+        <meshBasicMaterial
+          color="#dce8e0"
+          transparent
+          opacity={0.09}
+          depthWrite={false}
+          blending={THREE.AdditiveBlending}
+        />
+      </mesh>
+
+      <mesh scale={0.72}>
         <sphereGeometry
           args={[
             1,
-            isMobile ? 6 : 24,
-            isMobile ? 6 : 24,
+            isMobile ? 12 : 18,
+            isMobile ? 12 : 18,
           ]}
         />
 
         <meshBasicMaterial
-          ref={innerMaterial}
-          color="#dce8e0"
+          color="#e5eee8"
           transparent
-          opacity={0.018}
+          opacity={0.012}
           depthWrite={false}
           blending={THREE.AdditiveBlending}
         />
       </mesh>
-
-      {/*
-       * -------------------------------------------------------
-       * ORBITAL RINGS
-       * -------------------------------------------------------
-       */}
-
-      <group ref={ringGroup}>
-        <lineLoop
-          geometry={ringGeometry}
-          rotation={[
-            Math.PI / 2.7,
-            0.12,
-            0.2,
-          ]}
-        >
-          <lineBasicMaterial
-            color="#dce8e0"
-            transparent
-            opacity={
-              isMobile
-                ? 0.035
-                : 0.075
-            }
-            depthWrite={false}
-          />
-        </lineLoop>
-
-        {!isMobile && (
-          <>
-            <lineLoop
-              geometry={
-                secondaryRingGeometry
-              }
-              rotation={[
-                0.4,
-                Math.PI / 2.2,
-                -0.25,
-              ]}
-            >
-              <lineBasicMaterial
-                color="#b8ccc0"
-                transparent
-                opacity={0.045}
-                depthWrite={false}
-              />
-            </lineLoop>
-
-            <lineLoop
-              geometry={ringGeometry}
-              rotation={[
-                -0.8,
-                0.5,
-                0.8,
-              ]}
-              scale={0.72}
-            >
-              <lineBasicMaterial
-                color="#dce8e0"
-                transparent
-                opacity={0.035}
-                depthWrite={false}
-              />
-            </lineLoop>
-          </>
-        )}
-      </group>
-
-      {/*
-       * -------------------------------------------------------
-       * DESKTOP DESIGN MARKERS
-       * -------------------------------------------------------
-       */}
-
-      {!isMobile && (
-        <group>
-          <mesh
-            position={[
-              2.22,
-              0,
-              0,
-            ]}
-            rotation={[
-              0,
-              Math.PI / 2,
-              0,
-            ]}
-          >
-            <planeGeometry
-              args={[
-                0.045,
-                0.45,
-              ]}
-            />
-
-            <meshBasicMaterial
-              color="#dce8e0"
-              transparent
-              opacity={0.11}
-              depthWrite={false}
-            />
-          </mesh>
-
-          <mesh
-            position={[
-              -2.22,
-              0,
-              0,
-            ]}
-            rotation={[
-              0,
-              Math.PI / 2,
-              0,
-            ]}
-          >
-            <planeGeometry
-              args={[
-                0.045,
-                0.28,
-              ]}
-            />
-
-            <meshBasicMaterial
-              color="#dce8e0"
-              transparent
-              opacity={0.07}
-              depthWrite={false}
-            />
-          </mesh>
-
-          <mesh
-            position={[
-              0,
-              2.22,
-              0,
-            ]}
-          >
-            <planeGeometry
-              args={[
-                0.45,
-                0.045,
-              ]}
-            />
-
-            <meshBasicMaterial
-              color="#dce8e0"
-              transparent
-              opacity={0.09}
-              depthWrite={false}
-            />
-          </mesh>
-
-          <mesh
-            position={[
-              0,
-              -2.22,
-              0,
-            ]}
-          >
-            <planeGeometry
-              args={[
-                0.25,
-                0.045,
-              ]}
-            />
-
-            <meshBasicMaterial
-              color="#dce8e0"
-              transparent
-              opacity={0.06}
-              depthWrite={false}
-            />
-          </mesh>
-        </group>
-      )}
     </group>
   );
 }
 
 function Scene() {
-  return <AbstractObject />;
+  return <HeroObject />;
 }
 
 export default function HeroWebGL() {
-  const [isMobile, setIsMobile] =
-    useState(false);
-
-  useEffect(() => {
-    const mediaQuery =
-      window.matchMedia(
-        "(max-width: 767px)"
-      );
-
-    const update = () => {
-      setIsMobile(
-        mediaQuery.matches
-      );
-    };
-
-    update();
-
-    mediaQuery.addEventListener(
-      "change",
-      update
-    );
-
-    return () => {
-      mediaQuery.removeEventListener(
-        "change",
-        update
-      );
-    };
-  }, []);
-
   return (
     <div
-      className="
-        pointer-events-none
-        absolute
-        inset-0
-        z-0
-        overflow-hidden
-      "
+      className="pointer-events-none absolute inset-0 z-0 overflow-hidden"
       aria-hidden="true"
     >
       <Canvas
@@ -1201,22 +444,7 @@ export default function HeroWebGL() {
           position: [0, 0, 5],
           fov: 45,
         }}
-        /*
-         * Desktop:
-         * keep the sharper rendering.
-         *
-         * Mobile:
-         * cap pixel density aggressively.
-         *
-         * This matters because a modern phone can have
-         * several million physical pixels. Rendering WebGL
-         * at full device pixel ratio is often unnecessary.
-         */
-        dpr={
-          isMobile
-            ? [0.65, 0.85]
-            : [1, 1.25]
-        }
+        dpr={[1, 1.15]}
         gl={{
           antialias: false,
           alpha: true,
@@ -1225,107 +453,78 @@ export default function HeroWebGL() {
           depth: true,
         }}
         performance={{
-          min: isMobile
-            ? 0.45
-            : 0.7,
+          min: 0.65,
         }}
       >
         <Scene />
       </Canvas>
 
-      {/*
-       * ---------------------------------------------------------
-       * ATMOSPHERIC BLOOM
-       *
-       * Kept outside WebGL.
-       *
-       * Mobile is deliberately smaller and less blurred.
-       * ---------------------------------------------------------
-       */}
-
+      {/* Soft atmospheric field */}
       <div
         className="
           pointer-events-none
           absolute
           left-1/2
           top-1/2
-          h-[14rem]
-          w-[14rem]
+          h-[20rem]
+          w-[20rem]
           -translate-x-1/2
           -translate-y-1/2
           rounded-full
-          blur-[48px]
-          sm:h-[22rem]
-          sm:w-[22rem]
-          sm:blur-[70px]
-          md:h-[34rem]
-          md:w-[34rem]
-          md:blur-[110px]
+          blur-[80px]
+          sm:h-[25rem]
+          sm:w-[25rem]
+          sm:blur-[95px]
+          md:h-[29rem]
+          md:w-[29rem]
+          md:blur-[105px]
         "
         style={{
           background:
-            "radial-gradient(circle, rgba(180,205,190,0.075) 0%, rgba(120,150,135,0.025) 35%, transparent 70%)",
+            "radial-gradient(circle, rgba(180,205,190,0.07) 0%, rgba(120,150,135,0.025) 38%, transparent 70%)",
         }}
       />
 
-      {/*
-       * ---------------------------------------------------------
-       * CENTRE GLOW
-       * ---------------------------------------------------------
-       */}
-
+      {/* Small centre glow */}
       <div
         className="
           pointer-events-none
           absolute
           left-1/2
           top-1/2
-          h-16
-          w-16
+          h-20
+          w-20
           -translate-x-1/2
           -translate-y-1/2
           rounded-full
-          blur-[24px]
+          blur-[35px]
           sm:h-24
           sm:w-24
-          sm:blur-[38px]
-          md:h-32
-          md:w-32
-          md:blur-[50px]
+          md:h-28
+          md:w-28
+          md:blur-[45px]
         "
         style={{
           background:
-            "radial-gradient(circle, rgba(220,235,225,0.12), transparent 70%)",
+            "radial-gradient(circle, rgba(220,235,225,0.105), transparent 70%)",
         }}
       />
 
-      {/*
-       * ---------------------------------------------------------
-       * DESKTOP GRID ATMOSPHERE
-       *
-       * Never rendered on mobile.
-       * ---------------------------------------------------------
-       */}
-
+      {/* Fine central point */}
       <div
         className="
           pointer-events-none
           absolute
-          inset-0
-          hidden
-          opacity-[0.045]
-          md:block
+          left-1/2
+          top-1/2
+          h-1
+          w-1
+          -translate-x-1/2
+          -translate-y-1/2
+          rounded-full
+          bg-white/25
+          blur-[1px]
         "
-        style={{
-          backgroundImage:
-            "linear-gradient(rgba(220,235,225,0.35) 1px, transparent 1px), linear-gradient(90deg, rgba(220,235,225,0.35) 1px, transparent 1px)",
-          backgroundSize:
-            "80px 80px",
-          maskImage:
-            "radial-gradient(circle at center, black 0%, transparent 68%)",
-          WebkitMaskImage:
-            "radial-gradient(circle at center, black 0%, transparent 68%)",
-        }}
       />
     </div>
   );
