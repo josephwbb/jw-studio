@@ -111,6 +111,8 @@ export default function Home() {
   const verbContainerRef = useRef<HTMLDivElement>(null);
   const verbRefs = useRef<(HTMLSpanElement | null)[]>([]);
   const cardRef = useRef<HTMLDivElement>(null);
+  const studioImageRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const studioIntroRef = useRef<HTMLParagraphElement>(null);
   const [, setActiveVerbIndex] = useState(0);
   const [cardVisible, setCardVisible] = useState(false);
 
@@ -132,26 +134,46 @@ export default function Home() {
 
       if (!studio || !pinTarget || !card || verbElements.length === 0) return;
 
-      // The Studio is already positioned directly after the hero. Let normal
-      // document scrolling bring it up, then pin the fullscreen viewport.
-      // Do NOT translate the whole viewport off-screen at initialisation.
+      // Keep the pinned viewport visible at all times. The Studio takeover is
+      // created by the section entering the viewport, while the content itself
+      // stays at yPercent: 0 so it can never disappear during initialisation.
       gsap.set(pinTarget, { yPercent: 8 });
       gsap.set(card, { autoAlpha: 0, scale: 0.94, filter: "blur(14px)" });
+
+      const introLine = studioIntroRef.current;
+      const imageElements = studioImageRefs.current.filter(
+        (element): element is HTMLDivElement => Boolean(element)
+      );
+
+      if (introLine) {
+        gsap.set(introLine, { autoAlpha: 0, y: 18, filter: "blur(8px)" });
+      }
+
+      imageElements.forEach((image) => {
+        gsap.set(image, { autoAlpha: 0 });
+      });
 
       verbElements.forEach((element, index) => {
         gsap.set(element, {
           autoAlpha: index === 0 ? 1 : 0,
           scale: index === 0 ? 1 : 0.82,
           filter: index === 0 ? "blur(0px)" : "blur(16px)",
+          xPercent: -50,
+          yPercent: -50,
+          left: "50%",
+          top: "50%",
         });
       });
 
+      // One master timeline drives BOTH the typography and the imagery.
+      // Every verb owns a scroll segment, so the word and its image always
+      // enter, breathe, and leave together rather than advancing independently.
       const tl = gsap.timeline({
         scrollTrigger: {
           trigger: studio,
           start: "top top",
           end: "bottom bottom",
-          scrub: 0.8,
+          scrub: 0.75,
           pin: pinTarget,
           pinSpacing: false,
           anticipatePin: 1,
@@ -163,77 +185,308 @@ export default function Home() {
               verbElements.length - 1,
               Math.floor(progress * verbElements.length)
             );
-
             setActiveVerbIndex((previous) => previous === index ? previous : index);
             setCardVisible(progress >= 0.84);
           },
         },
       });
 
-      // Clean, subtle lift as the intro settles into the viewport.
-      tl.to(pinTarget, {
-        yPercent: 0,
-        duration: 0.7,
-        ease: "power3.out",
-      });
+      const existVerb = verbElements[0];
+      const occupyVerb = verbElements[1];
+      const blendVerb = verbElements[2];
+      const performVerb = verbElements[3];
+      const existImage = imageElements[0];
+      const occupyImage = imageElements[1];
+      const blendImage = imageElements[2];
+      const performImage = imageElements[3];
 
-      // EXIST. gets a proper opening beat.
-      tl.to({}, { duration: 0.8 });
+      // EXIST. / opening composition
+      // The image is the visual anchor: it reveals from the left while the
+      // opening line and word settle into the centre together.
+      if (introLine) {
+        tl.to(introLine, {
+          autoAlpha: 1,
+          y: 0,
+          filter: "blur(0px)",
+          duration: 0.55,
+          ease: "power3.out",
+        }, 0);
+      }
 
-      // One deliberate scroll beat per verb.
-      verbElements.forEach((element, index) => {
-        if (index >= verbElements.length - 1) return;
+      if (existVerb) {
+        tl.to(existVerb, {
+          autoAlpha: 1,
+          scale: 1,
+          filter: "blur(0px)",
+          duration: 0.55,
+          ease: "power3.out",
+        }, 0);
+      }
 
-        const nextElement = verbElements[index + 1];
-
-        tl.to({}, { duration: 0.35 });
-
-        tl.to(element, {
-          autoAlpha: 0,
-          scale: 1.14,
-          filter: "blur(18px)",
-          duration: 0.65,
-          ease: "power2.inOut",
-        });
-
+      if (existImage) {
         tl.fromTo(
-          nextElement,
-          { autoAlpha: 0, scale: 0.82, filter: "blur(18px)" },
+          existImage,
           {
-            autoAlpha: 1,
+            autoAlpha: 0,
+            x: -140,
+            y: 34,
+            scale: 1.12,
+            clipPath: "inset(0 100% 0 0)",
+            filter: "blur(10px)",
+          },
+          {
+            autoAlpha: 0.96,
+            x: 0,
+            y: 0,
             scale: 1,
+            clipPath: "inset(0 0% 0 0)",
             filter: "blur(0px)",
             duration: 0.7,
             ease: "power3.out",
           },
-          "<0.12"
+          0.05
         );
+        tl.to(existImage, {
+          x: -18,
+          y: -8,
+          duration: 0.8,
+          ease: "none",
+        }, 0.7);
+      }
 
-        tl.to({}, { duration: 0.7 });
-      });
+      // Let the first composition breathe before the next one pushes through.
+      tl.to({}, { duration: 0.75 });
 
-      // Let PERFORM. breathe before the portfolio statement arrives.
-      tl.to({}, { duration: 0.9 });
+      // EXIST. -> OCCUPY SPACE.
+      // Both the old composition and the new composition transition in the
+      // same window. The occupy image starts small, then becomes intrusive.
+      const occupyStart = tl.duration();
+      if (introLine) {
+        tl.to(introLine, {
+          autoAlpha: 0,
+          y: -12,
+          filter: "blur(8px)",
+          duration: 0.45,
+          ease: "power2.in",
+        }, occupyStart);
+      }
+      if (existVerb) {
+        tl.to(existVerb, {
+          autoAlpha: 0,
+          scale: 1.08,
+          filter: "blur(14px)",
+          duration: 0.65,
+          ease: "power2.inOut",
+        }, occupyStart);
+      }
+      if (existImage) {
+        tl.to(existImage, {
+          autoAlpha: 0,
+          x: -90,
+          scale: 1.08,
+          filter: "blur(12px)",
+          duration: 0.7,
+          ease: "power2.in",
+        }, occupyStart);
+      }
+      if (occupyVerb) {
+        tl.fromTo(
+          occupyVerb,
+          { autoAlpha: 0, scale: 0.82, filter: "blur(16px)" },
+          { autoAlpha: 1, scale: 1, filter: "blur(0px)", duration: 0.7, ease: "power3.out" },
+          occupyStart + 0.05
+        );
+      }
+      if (occupyImage) {
+        tl.fromTo(
+          occupyImage,
+          {
+            autoAlpha: 0,
+            x: 300,
+            y: 90,
+            scale: 0.28,
+            rotation: -6,
+            filter: "blur(14px)",
+          },
+          {
+            autoAlpha: 0.94,
+            x: 80,
+            y: 10,
+            scale: 1.2,
+            rotation: 2,
+            filter: "blur(0px)",
+            duration: 1.0,
+            ease: "power2.out",
+          },
+          occupyStart + 0.05
+        );
+        // The second half is deliberately uncomfortable: it keeps growing and
+        // physically crowds the word as the user continues to scroll.
+        tl.to(occupyImage, {
+          x: -20,
+          y: -20,
+          scale: 1.78,
+          rotation: -1,
+          duration: 0.85,
+          ease: "power2.inOut",
+        }, occupyStart + 0.9);
+      }
 
-      tl.to(verbElements[verbElements.length - 1], {
-        autoAlpha: 0,
-        scale: 1.05,
-        filter: "blur(18px)",
-        duration: 0.75,
-        ease: "power2.inOut",
-      });
+      tl.to({}, { duration: 0.45 });
 
-      // The portfolio statement remains inside the pinned sequence.
+      // OCCUPY SPACE. -> BLEND IN.
+      const blendStart = tl.duration();
+      if (occupyVerb) {
+        tl.to(occupyVerb, {
+          autoAlpha: 0,
+          scale: 1.1,
+          filter: "blur(16px)",
+          duration: 0.65,
+          ease: "power2.inOut",
+        }, blendStart);
+      }
+      if (occupyImage) {
+        tl.to(occupyImage, {
+          autoAlpha: 0,
+          scale: 1.25,
+          x: 70,
+          rotation: 3,
+          filter: "blur(18px)",
+          duration: 0.7,
+          ease: "power2.in",
+        }, blendStart);
+      }
+      if (blendVerb) {
+        tl.fromTo(
+          blendVerb,
+          { autoAlpha: 0, scale: 0.84, filter: "blur(18px)" },
+          { autoAlpha: 1, scale: 1, filter: "blur(0px)", duration: 0.85, ease: "power3.out" },
+          blendStart + 0.08
+        );
+      }
+      if (blendImage) {
+        tl.fromTo(
+          blendImage,
+          {
+            autoAlpha: 0,
+            x: 30,
+            y: 10,
+            scale: 1.12,
+            filter: "blur(30px) brightness(0.12) contrast(0.65)",
+          },
+          {
+            autoAlpha: 0.48,
+            x: 0,
+            y: 0,
+            scale: 1,
+            filter: "blur(2px) brightness(0.72) contrast(0.9)",
+            duration: 1.1,
+            ease: "power2.out",
+          },
+          blendStart + 0.05
+        );
+        // It doesn't simply fade out. It dissolves back into the black field.
+        tl.to(blendImage, {
+          autoAlpha: 0,
+          scale: 1.04,
+          filter: "blur(20px) brightness(0.18) contrast(0.65)",
+          duration: 0.75,
+          ease: "power2.in",
+        }, blendStart + 1.25);
+      }
+
+      tl.to({}, { duration: 0.35 });
+
+      // BLEND IN. -> PERFORM.
+      const performStart = tl.duration();
+      if (blendVerb) {
+        tl.to(blendVerb, {
+          autoAlpha: 0,
+          scale: 1.12,
+          filter: "blur(18px)",
+          duration: 0.65,
+          ease: "power2.inOut",
+        }, performStart);
+      }
+      if (performVerb) {
+        tl.fromTo(
+          performVerb,
+          { autoAlpha: 0, scale: 0.78, filter: "blur(18px)", xPercent: -50, yPercent: -50 },
+          { autoAlpha: 1, scale: 1, filter: "blur(0px)", duration: 0.75, ease: "power3.out" },
+          performStart + 0.05
+        );
+      }
+      if (performImage) {
+        tl.fromTo(
+          performImage,
+          {
+            autoAlpha: 0,
+            x: -120,
+            y: 70,
+            scale: 0.68,
+            rotation: -5,
+            filter: "blur(16px)",
+            clipPath: "inset(14% 22% 14% 22%)",
+          },
+          {
+            autoAlpha: 1,
+            x: 0,
+            y: 0,
+            scale: 1.14,
+            rotation: 1,
+            filter: "blur(0px)",
+            clipPath: "inset(0% 0% 0% 0%)",
+            duration: 1.0,
+            ease: "power3.out",
+          },
+          performStart + 0.05
+        );
+        tl.to(performImage, {
+          x: 50,
+          y: -24,
+          scale: 1.48,
+          rotation: 3,
+          duration: 0.8,
+          ease: "power2.inOut",
+        }, performStart + 1.0);
+      }
+
+      // Hold the climax briefly, then let word + image perform the final exit
+      // together before the portfolio statement takes over.
+      tl.to({}, { duration: 0.65 });
+
+      const finalExit = tl.duration();
+      if (performVerb) {
+        tl.to(performVerb, {
+          autoAlpha: 0,
+          scale: 1.2,
+          filter: "blur(22px)",
+          duration: 0.65,
+          ease: "power3.in",
+        }, finalExit);
+      }
+      if (performImage) {
+        tl.to(performImage, {
+          autoAlpha: 0,
+          scale: 1.95,
+          x: 100,
+          filter: "blur(12px)",
+          duration: 0.75,
+          ease: "power3.in",
+        }, finalExit + 0.03);
+      }
+
+      // Portfolio statement is still part of the same pinned scroll sequence.
       tl.to(card, {
         autoAlpha: 1,
         scale: 1,
         filter: "blur(0px)",
         duration: 0.9,
         ease: "power3.out",
-      }, "<0.2");
-
-      // Hold it before releasing into Selected Work.
+      }, finalExit + 0.5);
       tl.to(card, { autoAlpha: 1, duration: 1.8, ease: "none" });
+
+
     }, studioSectionRef);
 
     return () => ctx.revert();
@@ -1124,10 +1377,49 @@ export default function Home() {
           ref={studioPinRef}
           className="absolute inset-0 h-screen w-full flex flex-col items-center justify-center bg-[#080808] overflow-hidden px-6"
         >
+          {/* LIVE EDITORIAL IMAGE LAYERS */}
+          <div className="absolute inset-0 z-20 pointer-events-none overflow-hidden">
+            {[
+              "https://images.unsplash.com/photo-1511818966892-d7d671e672a2?auto=format&fit=crop&w=1400&q=85",
+              "https://images.unsplash.com/photo-1518005020951-eccb494ad742?auto=format&fit=crop&w=1600&q=85",
+              "https://images.unsplash.com/photo-1519608487953-e999c86e7455?auto=format&fit=crop&w=1400&q=85",
+              "https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&w=1600&q=85",
+            ].map((src, index) => (
+              <div
+                key={src}
+                ref={(el) => {
+                  studioImageRefs.current[index] = el;
+                }}
+                className={`absolute overflow-hidden bg-[#111] shadow-2xl ${
+                  index === 0
+                    ? "left-[7vw] top-[28%] h-[44vh] w-[31vw] max-w-[520px]"
+                    : index === 1
+                      ? "right-[-4vw] top-[18%] h-[58vh] w-[43vw] max-w-[720px]"
+                      : index === 2
+                        ? "left-[18vw] top-[16%] h-[68vh] w-[50vw] max-w-[780px] opacity-80"
+                        : "right-[8vw] top-[12%] h-[72vh] w-[46vw] max-w-[760px]"
+                }`}
+                style={{
+                  backgroundImage: `url(${src})`,
+                  backgroundSize: "cover",
+                  backgroundPosition: index === 0 ? "center" : "center",
+                }}
+              />
+            ))}
+          </div>
+
+          {/* FIRST COMPOSITION LINE */}
+          <p
+            ref={studioIntroRef}
+            className={`${sans.className} absolute left-1/2 top-[30%] z-[25] -translate-x-1/2 text-center text-[clamp(0.65rem,1.1vw,1rem)] font-medium uppercase tracking-[0.28em] text-white/55`}
+          >
+            Websites should do more than
+          </p>
+
           {/* ARTISTICALLY MASSIVE VERBS */}
           <div
             ref={verbContainerRef}
-            className={`${sans.className} absolute inset-0 flex items-center justify-center overflow-hidden pointer-events-none`}
+            className={`${sans.className} absolute inset-0 z-10 flex items-center justify-center overflow-visible pointer-events-none`}
           >
             {verbs.map((verb, idx) => (
               <span
