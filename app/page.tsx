@@ -113,6 +113,7 @@ export default function Home() {
   const cardRef = useRef<HTMLDivElement>(null);
   const studioImageRefs = useRef<(HTMLDivElement | null)[]>([]);
   const studioIntroRef = useRef<HTMLParagraphElement>(null);
+  const studioTakeoverRef = useRef<HTMLDivElement>(null);
   const [, setActiveVerbIndex] = useState(0);
   const [cardVisible, setCardVisible] = useState(false);
 
@@ -124,6 +125,8 @@ export default function Home() {
   useEffect(() => {
     gsap.registerPlugin(ScrollTrigger);
 
+    let tickerFn: (() => void) | undefined;
+
     const ctx = gsap.context(() => {
       const studio = studioSectionRef.current;
       const pinTarget = studioPinRef.current;
@@ -134,8 +137,15 @@ export default function Home() {
 
       if (!studio || !pinTarget || !card || verbElements.length === 0) return;
 
-      gsap.set(pinTarget, { yPercent: 0 });
+      // Keep the pinned viewport itself stationary. The immersive lift is handled by
+      // the inner takeover layer so ScrollTrigger can never hide the Studio.
+      gsap.set(pinTarget, { yPercent: 0, xPercent: 0, clearProps: "transform" });
       gsap.set(card, { autoAlpha: 0, scale: 0.94, filter: "blur(14px)" });
+
+      const studioTakeover = studioTakeoverRef.current;
+      if (studioTakeover) {
+        gsap.set(studioTakeover, { autoAlpha: 1, yPercent: 0, scale: 1 });
+      }
 
       const introLine = studioIntroRef.current;
       const imageElements = studioImageRefs.current.filter(
@@ -162,28 +172,11 @@ export default function Home() {
         });
       });
 
-      // Streamlined timeline for a smoother, less fatiguing scroll rhythm
-      const tl = gsap.timeline({
-        scrollTrigger: {
-          trigger: studio,
-          start: "top top",
-          end: "bottom bottom",
-          scrub: 1, // Faster, more responsive scrub weight
-          pin: pinTarget,
-          pinSpacing: true,
-          anticipatePin: 1,
-          invalidateOnRefresh: true,
-          onUpdate: (self) => {
-            const progress = self.progress;
-            const index = Math.min(
-              verbElements.length - 1,
-              Math.floor(progress * verbElements.length)
-            );
-            setActiveVerbIndex((previous) => previous === index ? previous : index);
-            setCardVisible(progress >= 0.82);
-          },
-        },
-      });
+      // The Studio gets a dedicated takeover phase, then a damped scroll
+      // progress drives the word/image compositions (see the resistance
+      // loop below). This makes the section feel like it arrives rather
+      // than simply following the Hero as a normal document block.
+      const tl = gsap.timeline({ paused: true });
 
       const existVerb = verbElements[0];
       const occupyVerb = verbElements[1];
@@ -194,9 +187,21 @@ export default function Home() {
       const blendImage = imageElements[2];
       const performImage = imageElements[3];
 
+      // 0. IMMERSIVE TAKEOVER
+      // A separate inner layer rises toward the cursor's side of the viewport.
+      // The pinned target itself never moves, which keeps the Studio reliably visible.
+      if (studioTakeover) {
+        tl.fromTo(
+          studioTakeover,
+          { yPercent: 100, scale: 1.04, transformOrigin: "50% 100%" },
+          { yPercent: 0, scale: 1, duration: 0.9, ease: "power3.out" },
+          0
+        );
+      }
+
       // 1. EXIST
       if (introLine) {
-        tl.to(introLine, { autoAlpha: 1, y: 0, filter: "blur(0px)", duration: 0.4 }, 0);
+        tl.to(introLine, { autoAlpha: 1, y: 0, filter: "blur(0px)", duration: 0.55 }, 0.65);
       }
       if (existVerb) {
         tl.to(existVerb, { autoAlpha: 1, scale: 1, filter: "blur(0px)", duration: 0.4 }, 0);
@@ -211,7 +216,7 @@ export default function Home() {
       }
 
       // 2. OCCUPY SPACE
-      const occupyStart = 1.0;
+      const occupyStart = 2.15;
       if (introLine) {
         tl.to(introLine, { autoAlpha: 0, y: -10, duration: 0.3 }, occupyStart);
       }
@@ -239,7 +244,7 @@ export default function Home() {
       }
 
       // 3. BLEND IN
-      const blendStart = 2.2;
+      const blendStart = 3.75;
       if (occupyVerb) {
         tl.to(occupyVerb, { autoAlpha: 0, scale: 1.05, filter: "blur(10px)", duration: 0.4 }, blendStart);
       }
@@ -264,7 +269,7 @@ export default function Home() {
       }
 
       // 4. PERFORM
-      const performStart = 3.4;
+      const performStart = 5.35;
       if (blendVerb) {
         tl.to(blendVerb, { autoAlpha: 0, scale: 1.05, filter: "blur(10px)", duration: 0.4 }, performStart);
       }
@@ -289,7 +294,7 @@ export default function Home() {
       }
 
       // Final Exit to Card
-      const finalExit = 4.6;
+      const finalExit = 7.0;
       if (performVerb) {
         tl.to(performVerb, { autoAlpha: 0, scale: 1.1, filter: "blur(15px)", duration: 0.4 }, finalExit);
       }
@@ -300,13 +305,82 @@ export default function Home() {
         autoAlpha: 1,
         scale: 1,
         filter: "blur(0px)",
-        duration: 0.5,
+        duration: 0.7,
         ease: "power3.out",
-      }, finalExit + 0.2);
+      }, finalExit + 0.25);
+
+      // Hold the portfolio statement as the final scene. Because this is part of
+      // the pinned timeline, the user cannot scroll past it until the hold completes.
+      tl.to(card, { autoAlpha: 1, duration: 2.2, ease: "none" }, finalExit + 0.95);
+
+      // --- SCROLL RESISTANCE -------------------------------------------------
+      // ScrollTrigger's own "scrub" ties the timeline directly to raw scroll
+      // position, so a big trackpad/wheel flick can jump the timeline through
+      // several scenes in one frame. Instead, ScrollTrigger below only reports
+      // a TARGET progress (0-1) from the raw scroll position and handles the
+      // pin; a separate damped value chases that target every animation
+      // frame via gsap.ticker, and it's that damped value — not the raw
+      // scroll — that actually drives tl.progress(). Large scroll input
+      // still moves the target instantly, but the visible animation always
+      // eases toward it, so the sequence glides through scenes instead of
+      // teleporting.
+      const totalDuration = tl.duration();
+      let targetProgress = 0;
+      let smoothProgress = 0;
+
+      ScrollTrigger.create({
+        trigger: studio,
+        start: "top top",
+        end: "bottom bottom",
+        pin: pinTarget,
+        pinSpacing: true,
+        anticipatePin: 1,
+        invalidateOnRefresh: true,
+        onUpdate: (self) => {
+          targetProgress = self.progress;
+        },
+      });
+
+      // Lower = heavier/more resistance (catches up more slowly), higher =
+      // snappier. Tuned so a hard flick still glides through rather than
+      // teleporting, without ever feeling stuck or unresponsive.
+      const RESISTANCE = 0.07;
+
+      const handleTick = () => {
+        const rate = gsap.ticker.deltaRatio();
+        smoothProgress += (targetProgress - smoothProgress) * Math.min(RESISTANCE * rate, 1);
+
+        if (Math.abs(targetProgress - smoothProgress) < 0.0005) {
+          smoothProgress = targetProgress;
+        }
+
+        tl.progress(smoothProgress);
+
+        if (totalDuration > 0) {
+          const index = Math.min(
+            verbElements.length - 1,
+            Math.floor(smoothProgress * verbElements.length)
+          );
+          setActiveVerbIndex((previous) => (previous === index ? previous : index));
+        }
+
+        setCardVisible((previous) => {
+          const next = smoothProgress >= 0.82;
+          return previous === next ? previous : next;
+        });
+      };
+
+      gsap.ticker.add(handleTick);
+      tickerFn = handleTick;
 
     }, studioSectionRef);
 
-    return () => ctx.revert();
+    return () => {
+      if (tickerFn) {
+        gsap.ticker.remove(tickerFn);
+      }
+      ctx.revert();
+    };
   }, []);
 
   useEffect(() => {
@@ -1194,13 +1268,20 @@ export default function Home() {
           ref={studioPinRef}
           className="absolute inset-0 h-screen w-full flex flex-col items-center justify-center bg-[#080808] overflow-hidden px-6"
         >
+          {/* IMMERSIVE STUDIO TAKEOVER LAYER */}
+          <div
+            ref={studioTakeoverRef}
+            className="absolute inset-0 z-[5] pointer-events-none bg-[#080808]"
+            aria-hidden="true"
+          />
+
           {/* LIVE EDITORIAL IMAGE LAYERS */}
           <div className="absolute inset-0 z-20 pointer-events-none overflow-hidden">
             {[
-              "https://images.unsplash.com/photo-1511818966892-d7d671e672a2?auto=format&fit=crop&w=1400&q=85",
-              "https://images.unsplash.com/photo-1518005020951-eccb494ad742?auto=format&fit=crop&w=1600&q=85",
-              "https://images.unsplash.com/photo-1519608487953-e999c86e7455?auto=format&fit=crop&w=1400&q=85",
-              "https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&w=1600&q=85",
+              "/images/studio-exist.jpg",
+              "/images/studio-occupy.jpg",
+              "/images/studio-blend.jpg",
+              "/images/studio-perform.jpg",
             ].map((src, index) => (
               <div
                 key={src}
