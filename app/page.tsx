@@ -105,109 +105,135 @@ export default function Home() {
   const [revealStage, setRevealStage] = useState<"init" | "webgl" | "typography" | "nav" | "complete">("init");
   const splashDoneRef = useRef(false);
 
-  // Concept 3: GSAP ScrollTrigger Pin & Scrub
+  // Concept 3: GSAP ScrollTrigger Pin & Scrub with Lift Effect
   const studioSectionRef = useRef<HTMLDivElement>(null);
   const studioPinRef = useRef<HTMLDivElement>(null);
   const verbContainerRef = useRef<HTMLDivElement>(null);
   const verbRefs = useRef<(HTMLSpanElement | null)[]>([]);
   const cardRef = useRef<HTMLDivElement>(null);
-  const [activeVerbIndex, setActiveVerbIndex] = useState(0);
+  const [, setActiveVerbIndex] = useState(0);
   const [cardVisible, setCardVisible] = useState(false);
 
   const mouseTarget = useRef({ x: 0, y: 0 });
   const mouseCurrent = useRef({ x: 0, y: 0 });
 
-  const verbs = ["exist.", "occupy space.", "blend in.", "PERFORM."];
+  const verbs = ["EXIST.", "OCCUPY SPACE.", "BLEND IN.", "PERFORM."];
 
   useEffect(() => {
     gsap.registerPlugin(ScrollTrigger);
 
     const ctx = gsap.context(() => {
-      const card = cardRef.current;
-      const trigger = studioSectionRef.current;
+      const studio = studioSectionRef.current;
       const pinTarget = studioPinRef.current;
-      const verbElements = verbRefs.current.filter(Boolean);
+      const card = cardRef.current;
+      const verbElements = verbRefs.current.filter(
+        (element): element is HTMLSpanElement => Boolean(element)
+      );
 
-      if (!card || !trigger || !pinTarget || verbElements.length === 0) return;
+      if (!studio || !pinTarget || !card || verbElements.length === 0) return;
 
-      const steps = verbs.length - 1;
+      // The Studio is already positioned directly after the hero. Let normal
+      // document scrolling bring it up, then pin the fullscreen viewport.
+      // Do NOT translate the whole viewport off-screen at initialisation.
+      gsap.set(pinTarget, { yPercent: 8 });
+      gsap.set(card, { autoAlpha: 0, scale: 0.94, filter: "blur(14px)" });
 
-      // Initial card hidden state
-      gsap.set(card, { autoAlpha: 0, y: 40, filter: "blur(12px)" });
-
-      // Position all verbs stacked on top of each other centrally, but offset visually
-      verbElements.forEach((el, index) => {
-        if (index === 0) {
-          gsap.set(el, { autoAlpha: 1, yPercent: 0, scale: 1, filter: "blur(0px)" });
-        } else {
-          gsap.set(el, { autoAlpha: 0, yPercent: 60, scale: 0.85, filter: "blur(16px)" });
-        }
+      verbElements.forEach((element, index) => {
+        gsap.set(element, {
+          autoAlpha: index === 0 ? 1 : 0,
+          scale: index === 0 ? 1 : 0.82,
+          filter: index === 0 ? "blur(0px)" : "blur(16px)",
+        });
       });
 
       const tl = gsap.timeline({
         scrollTrigger: {
-          trigger,
+          trigger: studio,
           start: "top top",
           end: "bottom bottom",
-          scrub: 1.5,
+          scrub: 0.8,
           pin: pinTarget,
+          pinSpacing: false,
           anticipatePin: 1,
+          invalidateOnRefresh: true,
+          fastScrollEnd: false,
           onUpdate: (self) => {
-            const idx = Math.min(steps, Math.floor(self.progress * (steps + 0.5)));
-            setActiveVerbIndex((prev) => (prev === idx ? prev : idx));
-            setCardVisible(self.progress > 0.75);
+            const progress = self.progress;
+            const index = Math.min(
+              verbElements.length - 1,
+              Math.floor(progress * verbElements.length)
+            );
+
+            setActiveVerbIndex((previous) => previous === index ? previous : index);
+            setCardVisible(progress >= 0.84);
           },
         },
       });
 
-      // Animate transitions between verbs in a continuous floating timeline
-      verbElements.forEach((el, i) => {
-        if (i < steps) {
-          const nextEl = verbElements[i + 1];
-          const startTime = i;
-
-          // Fade out current verb, floating upwards
-          tl.to(
-            el,
-            {
-              autoAlpha: 0,
-              yPercent: -60,
-              scale: 0.85,
-              filter: "blur(16px)",
-              ease: "power2.inOut",
-              duration: 0.8,
-            },
-            startTime
-          );
-
-          // Bring in next verb from below, floating up to active position
-          tl.to(
-            nextEl,
-            {
-              autoAlpha: 1,
-              yPercent: 0,
-              scale: 1,
-              filter: "blur(0px)",
-              ease: "power2.out",
-              duration: 0.8,
-            },
-            startTime + 0.2
-          );
-        }
+      // Clean, subtle lift as the intro settles into the viewport.
+      tl.to(pinTarget, {
+        yPercent: 0,
+        duration: 0.7,
+        ease: "power3.out",
       });
 
-      // Show the lower rates paragraph when reaching "PERFORM"
-      tl.to(
-        card,
-        {
-          autoAlpha: 1,
-          y: 0,
-          filter: "blur(0px)",
-          ease: "power3.out",
-          duration: 0.6,
-        },
-        steps - 0.2
-      );
+      // EXIST. gets a proper opening beat.
+      tl.to({}, { duration: 0.8 });
+
+      // One deliberate scroll beat per verb.
+      verbElements.forEach((element, index) => {
+        if (index >= verbElements.length - 1) return;
+
+        const nextElement = verbElements[index + 1];
+
+        tl.to({}, { duration: 0.35 });
+
+        tl.to(element, {
+          autoAlpha: 0,
+          scale: 1.14,
+          filter: "blur(18px)",
+          duration: 0.65,
+          ease: "power2.inOut",
+        });
+
+        tl.fromTo(
+          nextElement,
+          { autoAlpha: 0, scale: 0.82, filter: "blur(18px)" },
+          {
+            autoAlpha: 1,
+            scale: 1,
+            filter: "blur(0px)",
+            duration: 0.7,
+            ease: "power3.out",
+          },
+          "<0.12"
+        );
+
+        tl.to({}, { duration: 0.7 });
+      });
+
+      // Let PERFORM. breathe before the portfolio statement arrives.
+      tl.to({}, { duration: 0.9 });
+
+      tl.to(verbElements[verbElements.length - 1], {
+        autoAlpha: 0,
+        scale: 1.05,
+        filter: "blur(18px)",
+        duration: 0.75,
+        ease: "power2.inOut",
+      });
+
+      // The portfolio statement remains inside the pinned sequence.
+      tl.to(card, {
+        autoAlpha: 1,
+        scale: 1,
+        filter: "blur(0px)",
+        duration: 0.9,
+        ease: "power3.out",
+      }, "<0.2");
+
+      // Hold it before releasing into Selected Work.
+      tl.to(card, { autoAlpha: 1, duration: 1.8, ease: "none" });
     }, studioSectionRef);
 
     return () => ctx.revert();
@@ -1011,7 +1037,7 @@ export default function Home() {
       {/* HERO SECTION */}
       <section
         ref={heroRef}
-        className="relative flex min-h-[100svh] flex-col justify-between overflow-hidden px-5 pb-10 pt-32 sm:px-6 sm:pb-12 sm:pt-36 md:min-h-screen md:px-10 md:pb-14"
+        className="relative z-10 flex min-h-[100svh] flex-col justify-between overflow-hidden px-5 pb-10 pt-32 sm:px-6 sm:pb-12 sm:pt-36 md:min-h-screen md:px-10 md:pb-14 bg-[#080808]"
       >
         <div
           className={`pointer-events-none absolute left-1/2 top-1/2 h-[86vw] w-[86vw] max-h-[900px] max-w-[900px] -translate-x-1/2 -translate-y-1/2 rounded-full blur-[90px] sm:blur-[110px] transition-opacity duration-1000 ${
@@ -1087,93 +1113,66 @@ export default function Home() {
         </div>
       </section>
 
-      {/* CONCEPT 3: THE FULLSCREEN IMMERSIVE SCROLL TRIGGER */}
+      {/* INTRO IMMERSIVE FULLSCREEN SCROLL TRIGGER */}
       <section
         id="studio"
         ref={studioSectionRef}
-        className="relative border-t border-white/10 bg-[#080808]"
-        style={{ height: "450vh" }}
+        className="relative z-30 bg-[#080808] shadow-[0_-30px_60px_rgba(0,0,0,0.9)]"
+        style={{ height: "400vh" }}
       >
         <div
           ref={studioPinRef}
-          className="flex h-[100vh] w-full flex-col justify-between overflow-hidden px-6 py-10 sm:px-12 sm:py-16 md:px-20 md:py-24"
+          className="absolute inset-0 h-screen w-full flex flex-col items-center justify-center bg-[#080808] overflow-hidden px-6"
         >
-          <div className="flex items-center justify-between border-b border-white/10 pb-4">
-            <p className="text-[10px] uppercase tracking-[0.25em] text-white/40">
-              01 / Core Philosophy
-            </p>
-            <div className="flex items-center gap-2">
-              <span className={`h-1.5 w-1.5 rounded-full ${cardVisible ? "bg-white animate-pulse" : "bg-white/30"}`} />
-              <span className="text-[10px] uppercase tracking-[0.25em] text-white/50">
-                {cardVisible ? "PERFORMING" : "TRANSITIONING"}
+          {/* ARTISTICALLY MASSIVE VERBS */}
+          <div
+            ref={verbContainerRef}
+            className={`${sans.className} absolute inset-0 flex items-center justify-center overflow-hidden pointer-events-none`}
+          >
+            {verbs.map((verb, idx) => (
+              <span
+                key={verb}
+                ref={(el) => {
+                  verbRefs.current[idx] = el;
+                }}
+                className={`absolute text-center uppercase tracking-[-0.04em] font-black select-none will-change-transform ${
+                  idx === 3
+                    ? "text-[clamp(4.5rem,16vw,22rem)] text-white drop-shadow-[0_0_100px_rgba(255,255,255,0.25)]"
+                    : "text-[clamp(4rem,15vw,20rem)] text-white/90"
+                }`}
+              >
+                {verb}
               </span>
-            </div>
+            ))}
           </div>
 
-          {/* IMMERSIVE SCROLL DISPLAY */}
-          <div className="my-auto flex flex-col items-center justify-center text-center">
-            <h2 className="text-[clamp(1.2rem,2.5vw,2.5rem)] font-light tracking-widest text-white/50 uppercase mb-8">
-              Websites should do more than
-            </h2>
-
-            <div
-              ref={verbContainerRef}
-              className={`${serif.className} relative flex h-[1.3em] w-full items-center justify-center overflow-visible text-[clamp(4.5rem,14vw,18rem)] leading-none`}
-            >
-              {verbs.map((verb, idx) => (
-                <span
-                  key={verb}
-                  ref={(el) => {
-                    verbRefs.current[idx] = el;
-                  }}
-                  className={`absolute left-0 right-0 text-center will-change-transform ${
-                    idx === 3
-                      ? "italic font-normal tracking-tight text-white drop-shadow-[0_0_80px_rgba(255,255,255,0.4)]"
-                      : "italic font-light text-white/90"
-                  }`}
-                >
-                  {verb}
-                </span>
-              ))}
-            </div>
-          </div>
-
-          {/* MINIMALIST & BOLD LOWER RATES PORTFOLIO STATEMENT */}
+          {/* ISOLATED PORTFOLIO TAKEOVER STATEMENT */}
           <div
             ref={cardRef}
-            className={`transition-all duration-700 ${
+            className={`absolute inset-0 z-30 flex flex-col items-center justify-center bg-[#080808] px-6 text-center ${
               cardVisible ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0"
             }`}
           >
-            <div className="border-t border-white/20 pt-8 pb-4 flex flex-col md:flex-row md:items-end justify-between gap-8">
-              <div className="max-w-3xl">
-                <h3 className={`${serif.className} text-[clamp(2.5rem,5vw,5rem)] font-light leading-[0.95] tracking-[-0.03em] text-white italic`}>
-                  Building the portfolio at lower rates.
-                </h3>
-                <p className="mt-4 text-sm font-light leading-relaxed text-white/70 sm:text-base max-w-xl">
-                  Collaborating with select clients to craft exceptional digital experiences at initial agency launch pricing.
-                </p>
-              </div>
-
-              <div className="shrink-0">
-                <a
-                  href="#contact"
-                  className="group inline-flex items-center gap-4 text-xs uppercase tracking-[0.25em] text-white border-b border-white/40 pb-2 transition-all duration-500 hover:border-white hover:tracking-[0.3em]"
-                >
-                  <span>Initiate Project</span>
-                  <span className="transition-transform duration-500 group-hover:translate-x-1">↗</span>
-                </a>
-              </div>
+            <div className="max-w-4xl mx-auto flex flex-col items-center">
+              <h3 className={`${sans.className} text-[clamp(2.5rem,6.5vw,6rem)] font-bold leading-[1.05] tracking-[-0.04em] text-white mb-8`}>
+                Building the portfolio at lower rates.
+              </h3>
+              <a
+                href="#contact"
+                className="group inline-flex items-center gap-4 text-xs uppercase tracking-[0.3em] text-white border-b border-white/40 pb-2 transition-all duration-500 hover:border-white hover:tracking-[0.35em]"
+              >
+                <span>Initiate Project</span>
+                <span className="transition-transform duration-500 group-hover:translate-x-1">↗</span>
+              </a>
             </div>
           </div>
-
         </div>
       </section>
 
       {/* SELECTED WORK */}
       <section
         id="work"
-        className="relative px-5 pb-24 sm:px-6 sm:pb-32 md:px-10 md:pb-48"
+        className="relative z-30 bg-[#080808] px-5 pb-24 sm:px-6 sm:pb-32 md:px-10 md:pb-48"
       >
         <div className="mb-12 flex items-end justify-between border-b border-white/10 pb-5 sm:mb-16">
           <p className="text-[9px] uppercase tracking-[0.2em] text-white/35">
