@@ -3,6 +3,8 @@
 import { Cormorant_Garamond, Plus_Jakarta_Sans } from "next/font/google";
 import { useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
+import gsap from "gsap";
+import { ScrollTrigger } from "gsap/ScrollTrigger";
 
 const sans = Plus_Jakarta_Sans({
   subsets: ["latin"],
@@ -96,16 +98,120 @@ export default function Home() {
   });
 
   const [menuOpen, setMenuOpen] = useState(false);
-  const [activeMenuIndex, setActiveMenuIndex] = useState<number | null>(null);
   const [showWebGL, setShowWebGL] = useState(false);
   const [isDesktop, setIsDesktop] = useState(false);
-  
+
   // Single-run state machine
   const [revealStage, setRevealStage] = useState<"init" | "webgl" | "typography" | "nav" | "complete">("init");
   const splashDoneRef = useRef(false);
 
+  // Concept 3: GSAP ScrollTrigger Pin & Scrub
+  const studioSectionRef = useRef<HTMLDivElement>(null);
+  const studioPinRef = useRef<HTMLDivElement>(null);
+  const verbContainerRef = useRef<HTMLDivElement>(null);
+  const verbRefs = useRef<(HTMLSpanElement | null)[]>([]);
+  const cardRef = useRef<HTMLDivElement>(null);
+  const [activeVerbIndex, setActiveVerbIndex] = useState(0);
+  const [cardVisible, setCardVisible] = useState(false);
+
   const mouseTarget = useRef({ x: 0, y: 0 });
   const mouseCurrent = useRef({ x: 0, y: 0 });
+
+  const verbs = ["exist.", "occupy space.", "blend in.", "PERFORM."];
+
+  useEffect(() => {
+    gsap.registerPlugin(ScrollTrigger);
+
+    const ctx = gsap.context(() => {
+      const card = cardRef.current;
+      const trigger = studioSectionRef.current;
+      const pinTarget = studioPinRef.current;
+      const verbElements = verbRefs.current.filter(Boolean);
+
+      if (!card || !trigger || !pinTarget || verbElements.length === 0) return;
+
+      const steps = verbs.length - 1;
+
+      // Initial card hidden state
+      gsap.set(card, { autoAlpha: 0, y: 40, filter: "blur(12px)" });
+
+      // Position all verbs stacked on top of each other centrally, but offset visually
+      verbElements.forEach((el, index) => {
+        if (index === 0) {
+          gsap.set(el, { autoAlpha: 1, yPercent: 0, scale: 1, filter: "blur(0px)" });
+        } else {
+          gsap.set(el, { autoAlpha: 0, yPercent: 60, scale: 0.85, filter: "blur(16px)" });
+        }
+      });
+
+      const tl = gsap.timeline({
+        scrollTrigger: {
+          trigger,
+          start: "top top",
+          end: "bottom bottom",
+          scrub: 1.5,
+          pin: pinTarget,
+          anticipatePin: 1,
+          onUpdate: (self) => {
+            const idx = Math.min(steps, Math.floor(self.progress * (steps + 0.5)));
+            setActiveVerbIndex((prev) => (prev === idx ? prev : idx));
+            setCardVisible(self.progress > 0.75);
+          },
+        },
+      });
+
+      // Animate transitions between verbs in a continuous floating timeline
+      verbElements.forEach((el, i) => {
+        if (i < steps) {
+          const nextEl = verbElements[i + 1];
+          const startTime = i;
+
+          // Fade out current verb, floating upwards
+          tl.to(
+            el,
+            {
+              autoAlpha: 0,
+              yPercent: -60,
+              scale: 0.85,
+              filter: "blur(16px)",
+              ease: "power2.inOut",
+              duration: 0.8,
+            },
+            startTime
+          );
+
+          // Bring in next verb from below, floating up to active position
+          tl.to(
+            nextEl,
+            {
+              autoAlpha: 1,
+              yPercent: 0,
+              scale: 1,
+              filter: "blur(0px)",
+              ease: "power2.out",
+              duration: 0.8,
+            },
+            startTime + 0.2
+          );
+        }
+      });
+
+      // Show the lower rates paragraph when reaching "PERFORM"
+      tl.to(
+        card,
+        {
+          autoAlpha: 1,
+          y: 0,
+          filter: "blur(0px)",
+          ease: "power3.out",
+          duration: 0.6,
+        },
+        steps - 0.2
+      );
+    }, studioSectionRef);
+
+    return () => ctx.revert();
+  }, []);
 
   useEffect(() => {
     const startWebGL = () => {
@@ -181,7 +287,6 @@ export default function Home() {
     };
   }, []);
 
-  // Integrated Ink Splash & Single Impact Engine
   useEffect(() => {
     const canvas = inkCanvasRef.current;
     if (!canvas) return;
@@ -215,7 +320,6 @@ export default function Home() {
     let speed = 0;
     let time = 0;
 
-    // Strict single-run splash state
     let splashPhase: "falling" | "impacting" | "expanding" | "done" = splashDoneRef.current ? "done" : "falling";
     let dropY = -60;
     let dropTargetY = height / 2;
@@ -403,7 +507,6 @@ export default function Home() {
       time += 16;
       context.clearRect(0, 0, width, height);
 
-      // --- SINGLE DROP & EXPAND ENGINE ---
       if (splashPhase !== "done") {
         const centerX = width / 2;
 
@@ -451,13 +554,12 @@ export default function Home() {
           }
           if (splashRadius >= maxSplashRadius * 0.92) {
             splashPhase = "done";
-            splashDoneRef.current = true; // Permanently lock splash as complete
+            splashDoneRef.current = true;
             setRevealStage("complete");
           }
         }
       }
 
-      // --- INTERACTIVE MOUSE INK ENGINE ---
       velocityX *= 0.92;
       velocityY *= 0.92;
       speed *= 0.94;
@@ -786,7 +888,6 @@ export default function Home() {
           transform: translate(-4px, -50%);
         }
 
-        /* HARD-CODED ZERO OPACITY AT CSS LAYER TO PREVENT FLASH */
         .reveal-item {
           opacity: 0;
           will-change: transform, opacity, filter;
@@ -986,30 +1087,86 @@ export default function Home() {
         </div>
       </section>
 
-      {/* STUDIO INTRO */}
+      {/* CONCEPT 3: THE FULLSCREEN IMMERSIVE SCROLL TRIGGER */}
       <section
         id="studio"
-        className="relative border-t border-white/10 px-5 py-24 sm:px-6 sm:py-32 md:px-10 md:py-48"
+        ref={studioSectionRef}
+        className="relative border-t border-white/10 bg-[#080808]"
+        style={{ height: "450vh" }}
       >
-        <div className="grid gap-12 sm:gap-16 md:grid-cols-12">
-          <div className="md:col-span-4">
-            <p className="text-[9px] uppercase tracking-[0.2em] text-white/35">
-              01 / Studio
+        <div
+          ref={studioPinRef}
+          className="flex h-[100vh] w-full flex-col justify-between overflow-hidden px-6 py-10 sm:px-12 sm:py-16 md:px-20 md:py-24"
+        >
+          <div className="flex items-center justify-between border-b border-white/10 pb-4">
+            <p className="text-[10px] uppercase tracking-[0.25em] text-white/40">
+              01 / Core Philosophy
             </p>
-          </div>
-
-          <div className="md:col-span-7 md:col-start-6">
-            <p className="text-[clamp(2.15rem,5vw,5rem)] font-light leading-[1.02] tracking-[-0.06em]">
-              Websites should do more than{" "}
-              <span className={`${serif.className} italic text-white/50`}>
-                exist.
+            <div className="flex items-center gap-2">
+              <span className={`h-1.5 w-1.5 rounded-full ${cardVisible ? "bg-white animate-pulse" : "bg-white/30"}`} />
+              <span className="text-[10px] uppercase tracking-[0.25em] text-white/50">
+                {cardVisible ? "PERFORMING" : "TRANSITIONING"}
               </span>
-            </p>
-
-            <p className="mt-9 max-w-lg text-sm leading-7 text-white/45 sm:mt-12">
-              JW Studio combines visual design, modern development and motion to create dynamic visual experiences tailored to elevate brands.
-            </p>
+            </div>
           </div>
+
+          {/* IMMERSIVE SCROLL DISPLAY */}
+          <div className="my-auto flex flex-col items-center justify-center text-center">
+            <h2 className="text-[clamp(1.2rem,2.5vw,2.5rem)] font-light tracking-widest text-white/50 uppercase mb-8">
+              Websites should do more than
+            </h2>
+
+            <div
+              ref={verbContainerRef}
+              className={`${serif.className} relative flex h-[1.3em] w-full items-center justify-center overflow-visible text-[clamp(4.5rem,14vw,18rem)] leading-none`}
+            >
+              {verbs.map((verb, idx) => (
+                <span
+                  key={verb}
+                  ref={(el) => {
+                    verbRefs.current[idx] = el;
+                  }}
+                  className={`absolute left-0 right-0 text-center will-change-transform ${
+                    idx === 3
+                      ? "italic font-normal tracking-tight text-white drop-shadow-[0_0_80px_rgba(255,255,255,0.4)]"
+                      : "italic font-light text-white/90"
+                  }`}
+                >
+                  {verb}
+                </span>
+              ))}
+            </div>
+          </div>
+
+          {/* MINIMALIST & BOLD LOWER RATES PORTFOLIO STATEMENT */}
+          <div
+            ref={cardRef}
+            className={`transition-all duration-700 ${
+              cardVisible ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0"
+            }`}
+          >
+            <div className="border-t border-white/20 pt-8 pb-4 flex flex-col md:flex-row md:items-end justify-between gap-8">
+              <div className="max-w-3xl">
+                <h3 className={`${serif.className} text-[clamp(2.5rem,5vw,5rem)] font-light leading-[0.95] tracking-[-0.03em] text-white italic`}>
+                  Building the portfolio at lower rates.
+                </h3>
+                <p className="mt-4 text-sm font-light leading-relaxed text-white/70 sm:text-base max-w-xl">
+                  Collaborating with select clients to craft exceptional digital experiences at initial agency launch pricing.
+                </p>
+              </div>
+
+              <div className="shrink-0">
+                <a
+                  href="#contact"
+                  className="group inline-flex items-center gap-4 text-xs uppercase tracking-[0.25em] text-white border-b border-white/40 pb-2 transition-all duration-500 hover:border-white hover:tracking-[0.3em]"
+                >
+                  <span>Initiate Project</span>
+                  <span className="transition-transform duration-500 group-hover:translate-x-1">↗</span>
+                </a>
+              </div>
+            </div>
+          </div>
+
         </div>
       </section>
 
