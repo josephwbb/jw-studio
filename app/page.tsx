@@ -199,119 +199,170 @@ export default function Home() {
         );
       }
 
-      // 1. EXIST
+      // Each verb gets an equal, generous slice of scroll: a slow entrance,
+      // a "drift" that keeps the photo gently moving the whole time it's
+      // being read (so scrolling never goes dead while a word holds), and
+      // an exit that clears the way for the next verb. Entrance + drift +
+      // exit always add up to exactly PHASE, so phases run back-to-back
+      // with no gaps and no overlap.
+      const PHASE = 2.6;
+      const ENTER_DUR = 0.75;
+      const EXIT_DUR = 0.65;
+      const DRIFT_DUR = PHASE - ENTER_DUR - EXIT_DUR;
+
+      const existStart = 0;
+      const occupyStart = existStart + PHASE;
+      const blendStart = occupyStart + PHASE;
+      const performStart = blendStart + PHASE;
+
+      // 1. EXIST — slides in from the edge, then keeps a slow settling
+      // drift for the rest of the hold instead of sitting frozen.
       if (introLine) {
-        tl.to(introLine, { autoAlpha: 1, y: 0, filter: "blur(0px)", duration: 0.55 }, 0.65);
+        tl.to(introLine, { autoAlpha: 1, y: 0, filter: "blur(0px)", duration: 0.5 }, existStart + 0.25);
       }
       if (existVerb) {
-        tl.to(existVerb, { autoAlpha: 1, scale: 1, filter: "blur(0px)", duration: 0.4 }, 0);
+        tl.fromTo(
+          existVerb,
+          { autoAlpha: 0, scale: 0.9, filter: "blur(14px)" },
+          { autoAlpha: 1, scale: 1, filter: "blur(0px)", duration: ENTER_DUR, ease: "power2.out" },
+          existStart
+        );
       }
       if (existImage) {
         tl.fromTo(
           existImage,
-          { autoAlpha: 0, x: -100, scale: 1.08, filter: "blur(8px)" },
-          { autoAlpha: 0.95, x: 0, scale: 1, filter: "blur(0px)", duration: 0.5 },
-          0
+          { autoAlpha: 0, x: -120, scale: 1.1, filter: "blur(10px)" },
+          { autoAlpha: 0.95, x: 0, scale: 1, filter: "blur(0px)", duration: ENTER_DUR, ease: "power2.out" },
+          existStart
+        );
+        tl.to(
+          existImage,
+          { x: 14, scale: 1.035, duration: DRIFT_DUR, ease: "none" },
+          existStart + ENTER_DUR
         );
       }
 
-      // 2. OCCUPY SPACE
-      const occupyStart = 2.15;
+      const existExitAt = occupyStart - EXIT_DUR;
       if (introLine) {
-        tl.to(introLine, { autoAlpha: 0, y: -10, duration: 0.3 }, occupyStart);
+        tl.to(introLine, { autoAlpha: 0, y: -10, duration: 0.35 }, existExitAt);
       }
       if (existVerb) {
-        tl.to(existVerb, { autoAlpha: 0, scale: 1.05, filter: "blur(10px)", duration: 0.4 }, occupyStart);
+        tl.to(existVerb, { autoAlpha: 0, scale: 1.06, filter: "blur(12px)", duration: EXIT_DUR, ease: "power2.in" }, existExitAt);
       }
       if (existImage) {
-        tl.to(existImage, { autoAlpha: 0, x: -60, duration: 0.4 }, occupyStart);
+        tl.to(existImage, { autoAlpha: 0, x: -50, scale: 1.02, filter: "blur(6px)", duration: EXIT_DUR, ease: "power2.in" }, existExitAt);
       }
+
+      // 2. OCCUPY SPACE — scales up aggressively into frame, then keeps
+      // slowly growing through the hold to reinforce "occupying" more of
+      // the screen the longer it's on view.
       if (occupyVerb) {
         tl.fromTo(
           occupyVerb,
-          { autoAlpha: 0, scale: 0.85, filter: "blur(12px)" },
-          { autoAlpha: 1, scale: 1, filter: "blur(0px)", duration: 0.4 },
+          { autoAlpha: 0, scale: 0.85, filter: "blur(14px)" },
+          { autoAlpha: 1, scale: 1, filter: "blur(0px)", duration: ENTER_DUR, ease: "power2.out" },
           occupyStart
         );
       }
       if (occupyImage) {
         tl.fromTo(
           occupyImage,
-          { autoAlpha: 0, x: 150, scale: 0.6, rotation: -4, filter: "blur(10px)" },
-          { autoAlpha: 0.95, x: 20, scale: 1.2, rotation: 1, filter: "blur(0px)", duration: 0.6 },
+          { autoAlpha: 0, x: 160, scale: 0.6, rotation: -5, filter: "blur(12px)" },
+          { autoAlpha: 0.95, x: 20, scale: 1.18, rotation: 1, filter: "blur(0px)", duration: ENTER_DUR, ease: "power2.out" },
           occupyStart
+        );
+        tl.to(
+          occupyImage,
+          { scale: 1.26, x: 6, rotation: -0.5, duration: DRIFT_DUR, ease: "none" },
+          occupyStart + ENTER_DUR
         );
       }
 
-      // 3. BLEND IN
-      const blendStart = 3.75;
+      const occupyExitAt = blendStart - EXIT_DUR;
       if (occupyVerb) {
-        tl.to(occupyVerb, { autoAlpha: 0, scale: 1.05, filter: "blur(10px)", duration: 0.4 }, blendStart);
+        tl.to(occupyVerb, { autoAlpha: 0, scale: 1.06, filter: "blur(12px)", duration: EXIT_DUR, ease: "power2.in" }, occupyExitAt);
       }
       if (occupyImage) {
-        tl.to(occupyImage, { autoAlpha: 0, scale: 1.1, duration: 0.4 }, blendStart);
+        tl.to(occupyImage, { autoAlpha: 0, scale: 1.32, duration: EXIT_DUR, ease: "power2.in" }, occupyExitAt);
       }
+
+      // 3. BLEND IN — gradually emerges from black across the whole phase
+      // (brightening and sharpening slowly through the hold) before
+      // dissolving away.
       if (blendVerb) {
         tl.fromTo(
           blendVerb,
-          { autoAlpha: 0, scale: 0.85, filter: "blur(12px)" },
-          { autoAlpha: 1, scale: 1, filter: "blur(0px)", duration: 0.4 },
+          { autoAlpha: 0, scale: 0.85, filter: "blur(14px)" },
+          { autoAlpha: 1, scale: 1, filter: "blur(0px)", duration: ENTER_DUR, ease: "power2.out" },
           blendStart
         );
       }
       if (blendImage) {
         tl.fromTo(
           blendImage,
-          { autoAlpha: 0, scale: 1.05, filter: "blur(20px) brightness(0.2)" },
-          { autoAlpha: 0.5, scale: 1, filter: "blur(2px) brightness(0.7)", duration: 0.6 },
+          { autoAlpha: 0, scale: 1.08, filter: "blur(24px) brightness(0.15)" },
+          { autoAlpha: 0.55, scale: 1.02, filter: "blur(6px) brightness(0.55)", duration: ENTER_DUR, ease: "power2.out" },
           blendStart
+        );
+        tl.to(
+          blendImage,
+          { autoAlpha: 0.75, scale: 1, filter: "blur(0px) brightness(0.85)", duration: DRIFT_DUR, ease: "none" },
+          blendStart + ENTER_DUR
         );
       }
 
-      // 4. PERFORM
-      const performStart = 5.35;
+      const blendExitAt = performStart - EXIT_DUR;
       if (blendVerb) {
-        tl.to(blendVerb, { autoAlpha: 0, scale: 1.05, filter: "blur(10px)", duration: 0.4 }, performStart);
+        tl.to(blendVerb, { autoAlpha: 0, scale: 1.06, filter: "blur(12px)", duration: EXIT_DUR, ease: "power2.in" }, blendExitAt);
       }
       if (blendImage) {
-        tl.to(blendImage, { autoAlpha: 0, duration: 0.4 }, performStart);
+        tl.to(blendImage, { autoAlpha: 0, filter: "blur(10px) brightness(0.4)", duration: EXIT_DUR, ease: "power2.in" }, blendExitAt);
       }
+
+      // 4. PERFORM — the most cinematic movement, building to a climax
+      // right up until the section releases into the portfolio card.
       if (performVerb) {
         tl.fromTo(
           performVerb,
-          { autoAlpha: 0, scale: 0.85, filter: "blur(12px)" },
-          { autoAlpha: 1, scale: 1, filter: "blur(0px)", duration: 0.4 },
+          { autoAlpha: 0, scale: 0.85, filter: "blur(14px)" },
+          { autoAlpha: 1, scale: 1, filter: "blur(0px)", duration: ENTER_DUR, ease: "power2.out" },
           performStart
         );
       }
       if (performImage) {
         tl.fromTo(
           performImage,
-          { autoAlpha: 0, x: -100, scale: 0.7, filter: "blur(10px)" },
-          { autoAlpha: 1, x: 0, scale: 1.1, filter: "blur(0px)", duration: 0.6 },
+          { autoAlpha: 0, x: -120, scale: 0.7, filter: "blur(12px)" },
+          { autoAlpha: 1, x: 0, scale: 1.08, filter: "blur(0px)", duration: ENTER_DUR, ease: "power2.out" },
           performStart
+        );
+        tl.to(
+          performImage,
+          { scale: 1.24, x: 18, duration: DRIFT_DUR, ease: "none" },
+          performStart + ENTER_DUR
         );
       }
 
-      // Final Exit to Card
-      const finalExit = 7.0;
+      const finalExit = performStart + PHASE - EXIT_DUR;
       if (performVerb) {
-        tl.to(performVerb, { autoAlpha: 0, scale: 1.1, filter: "blur(15px)", duration: 0.4 }, finalExit);
+        tl.to(performVerb, { autoAlpha: 0, scale: 1.14, filter: "blur(18px)", duration: EXIT_DUR, ease: "power2.in" }, finalExit);
       }
       if (performImage) {
-        tl.to(performImage, { autoAlpha: 0, scale: 1.3, duration: 0.4 }, finalExit);
+        tl.to(performImage, { autoAlpha: 0, scale: 1.4, filter: "blur(4px)", duration: EXIT_DUR, ease: "power2.in" }, finalExit);
       }
+
+      const cardStart = performStart + PHASE + 0.1;
       tl.to(card, {
         autoAlpha: 1,
         scale: 1,
         filter: "blur(0px)",
-        duration: 0.7,
+        duration: 0.75,
         ease: "power3.out",
-      }, finalExit + 0.25);
+      }, cardStart);
 
       // Hold the portfolio statement as the final scene. Because this is part of
       // the pinned timeline, the user cannot scroll past it until the hold completes.
-      tl.to(card, { autoAlpha: 1, duration: 2.2, ease: "none" }, finalExit + 0.95);
+      tl.to(card, { autoAlpha: 1, duration: 2.4, ease: "none" }, cardStart + 0.75);
 
       // --- SCROLL RESISTANCE -------------------------------------------------
       // ScrollTrigger's own "scrub" ties the timeline directly to raw scroll
@@ -325,6 +376,7 @@ export default function Home() {
       // eases toward it, so the sequence glides through scenes instead of
       // teleporting.
       const totalDuration = tl.duration();
+      const cardVisibleThreshold = cardStart / totalDuration;
       let targetProgress = 0;
       let smoothProgress = 0;
 
@@ -344,7 +396,7 @@ export default function Home() {
       // Lower = heavier/more resistance (catches up more slowly), higher =
       // snappier. Tuned so a hard flick still glides through rather than
       // teleporting, without ever feeling stuck or unresponsive.
-      const RESISTANCE = 0.07;
+      const RESISTANCE = 0.06;
 
       const handleTick = () => {
         const rate = gsap.ticker.deltaRatio();
@@ -365,7 +417,7 @@ export default function Home() {
         }
 
         setCardVisible((previous) => {
-          const next = smoothProgress >= 0.82;
+          const next = smoothProgress >= cardVisibleThreshold;
           return previous === next ? previous : next;
         });
       };
@@ -382,6 +434,7 @@ export default function Home() {
       ctx.revert();
     };
   }, []);
+
 
   useEffect(() => {
     const startWebGL = () => {
@@ -1262,7 +1315,7 @@ export default function Home() {
         id="studio"
         ref={studioSectionRef}
         className="relative z-30 bg-[#080808] shadow-[0_-30px_60px_rgba(0,0,0,0.9)]"
-        style={{ height: "450vh" }}
+        style={{ height: "620vh" }}
       >
         <div
           ref={studioPinRef}
