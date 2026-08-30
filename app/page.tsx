@@ -118,6 +118,7 @@ export default function Home() {
   const studioImageRefs = useRef<(HTMLDivElement | null)[]>([]);
   const studioIntroRef = useRef<HTMLParagraphElement>(null);
   const studioTakeoverRef = useRef<HTMLDivElement>(null);
+  const linesBgRef = useRef<HTMLDivElement>(null);
   const [, setActiveVerbIndex] = useState(0);
   const [cardVisible, setCardVisible] = useState(false);
 
@@ -141,23 +142,26 @@ export default function Home() {
 
       if (!studio || !pinTarget || !card || verbElements.length === 0) return;
 
-      // Keep the pinned viewport itself stationary. The immersive lift is handled by
-      // the inner takeover layer so ScrollTrigger can never hide the Studio.
       gsap.set(pinTarget, { yPercent: 0, xPercent: 0, clearProps: "transform" });
       gsap.set(card, { autoAlpha: 0, scale: 0.94, filter: "blur(14px)" });
 
       const studioTakeover = studioTakeoverRef.current;
       if (studioTakeover) {
-        gsap.set(studioTakeover, { autoAlpha: 1, yPercent: 0, scale: 1 });
+        gsap.set(studioTakeover, { autoAlpha: 1, yPercent: 100, scale: 1 });
       }
 
       const introLine = studioIntroRef.current;
+      const linesBg = linesBgRef.current;
       const imageElements = studioImageRefs.current.filter(
         (element): element is HTMLDivElement => Boolean(element)
       );
 
       if (introLine) {
         gsap.set(introLine, { autoAlpha: 0, y: 18, filter: "blur(8px)" });
+      }
+
+      if (linesBg) {
+        gsap.set(linesBg, { scaleX: 1, scaleY: 1, opacity: 0.38, background: "transparent" });
       }
 
       imageElements.forEach((image) => {
@@ -176,10 +180,6 @@ export default function Home() {
         });
       });
 
-      // The Studio gets a dedicated takeover phase, then a damped scroll
-      // progress drives the word/image compositions (see the resistance
-      // loop below). This makes the section feel like it arrives rather
-      // than simply following the Hero as a normal document block.
       const tl = gsap.timeline({ paused: true });
 
       const existVerb = verbElements[0];
@@ -191,36 +191,40 @@ export default function Home() {
       const blendImage = imageElements[2];
       const performImage = imageElements[3];
 
-      // 0. IMMERSIVE TAKEOVER
-      // A separate inner layer rises toward the cursor's side of the viewport.
-      // The pinned target itself never moves, which keeps the Studio reliably visible.
+      // 0. IMMERSIVE TAKEOVER: Intro layer rises from 100% to 0% over an extremely short scroll distance
       if (studioTakeover) {
         tl.fromTo(
           studioTakeover,
-          { yPercent: 100, scale: 1.04, transformOrigin: "50% 100%" },
-          { yPercent: 0, scale: 1, duration: 0.9, ease: "power3.out" },
+          { yPercent: 100 },
+          { yPercent: 0, duration: 0.25, ease: "none" },
           0
         );
       }
 
-      // Each verb gets an equal, generous slice of scroll: a slow entrance,
-      // a "drift" that keeps the photo gently moving the whole time it's
-      // being read (so scrolling never goes dead while a word holds), and
-      // an exit that clears the way for the next verb. Entrance + drift +
-      // exit always add up to exactly PHASE, so phases run back-to-back
-      // with no gaps and no overlap.
       const PHASE = 2.6;
       const ENTER_DUR = 0.75;
       const EXIT_DUR = 0.65;
       const DRIFT_DUR = PHASE - ENTER_DUR - EXIT_DUR;
 
-      const existStart = 0;
+      const existStart = 0.25;
       const occupyStart = existStart + PHASE;
       const blendStart = occupyStart + PHASE;
       const performStart = blendStart + PHASE;
 
-      // 1. EXIST — slides in from the edge, then keeps a slow settling
-      // drift for the rest of the hold instead of sitting frozen.
+      if (linesBg) {
+        tl.fromTo(
+          linesBg,
+          { scaleX: 1, scaleY: 1, opacity: 0.38, background: "radial-gradient(circle at center, rgba(59,130,246,0.05) 0%, rgba(249,115,22,0.05) 60%, transparent 100%)" },
+          { scaleX: 1.35, scaleY: 1.15, opacity: 0.85, background: "radial-gradient(circle at center, rgba(59,130,246,0.18) 0%, rgba(249,115,22,0.18) 70%, transparent 100%)", duration: ENTER_DUR, ease: "power2.out" },
+          existStart
+        );
+        tl.to(
+          linesBg,
+          { scaleX: 1.15, scaleY: 1.05, opacity: 0.55, duration: DRIFT_DUR, ease: "none" },
+          existStart + ENTER_DUR
+        );
+      }
+
       if (introLine) {
         tl.to(introLine, { autoAlpha: 1, y: 0, filter: "blur(0px)", duration: 0.5 }, existStart + 0.25);
       }
@@ -247,6 +251,13 @@ export default function Home() {
       }
 
       const existExitAt = occupyStart - EXIT_DUR;
+      if (linesBg) {
+        tl.to(
+          linesBg,
+          { scaleX: 1, scaleY: 1, opacity: 0.38, background: "transparent", duration: EXIT_DUR, ease: "power2.in" },
+          existExitAt
+        );
+      }
       if (introLine) {
         tl.to(introLine, { autoAlpha: 0, y: -10, duration: 0.35 }, existExitAt);
       }
@@ -257,9 +268,6 @@ export default function Home() {
         tl.to(existImage, { autoAlpha: 0, x: -50, scale: 1.02, filter: "blur(6px)", duration: EXIT_DUR, ease: "power2.in" }, existExitAt);
       }
 
-      // 2. OCCUPY SPACE — scales up aggressively into frame, then keeps
-      // slowly growing through the hold to reinforce "occupying" more of
-      // the screen the longer it's on view.
       if (occupyVerb) {
         tl.fromTo(
           occupyVerb,
@@ -290,9 +298,6 @@ export default function Home() {
         tl.to(occupyImage, { autoAlpha: 0, scale: 1.32, duration: EXIT_DUR, ease: "power2.in" }, occupyExitAt);
       }
 
-      // 3. BLEND IN — gradually emerges from black across the whole phase
-      // (brightening and sharpening slowly through the hold) before
-      // dissolving away.
       if (blendVerb) {
         tl.fromTo(
           blendVerb,
@@ -323,8 +328,6 @@ export default function Home() {
         tl.to(blendImage, { autoAlpha: 0, filter: "blur(10px) brightness(0.4)", duration: EXIT_DUR, ease: "power2.in" }, blendExitAt);
       }
 
-      // 4. PERFORM — the most cinematic movement, building to a climax
-      // right up until the section releases into the portfolio card.
       if (performVerb) {
         tl.fromTo(
           performVerb,
@@ -364,21 +367,8 @@ export default function Home() {
         ease: "power3.out",
       }, cardStart);
 
-      // Hold the portfolio statement as the final scene. Because this is part of
-      // the pinned timeline, the user cannot scroll past it until the hold completes.
       tl.to(card, { autoAlpha: 1, duration: 2.4, ease: "none" }, cardStart + 0.75);
 
-      // --- SCROLL RESISTANCE -------------------------------------------------
-      // ScrollTrigger's own "scrub" ties the timeline directly to raw scroll
-      // position, so a big trackpad/wheel flick can jump the timeline through
-      // several scenes in one frame. Instead, ScrollTrigger below only reports
-      // a TARGET progress (0-1) from the raw scroll position and handles the
-      // pin; a separate damped value chases that target every animation
-      // frame via gsap.ticker, and it's that damped value — not the raw
-      // scroll — that actually drives tl.progress(). Large scroll input
-      // still moves the target instantly, but the visible animation always
-      // eases toward it, so the sequence glides through scenes instead of
-      // teleporting.
       const totalDuration = tl.duration();
       const cardVisibleThreshold = cardStart / totalDuration;
       let targetProgress = 0;
@@ -397,9 +387,6 @@ export default function Home() {
         },
       });
 
-      // Lower = heavier/more resistance (catches up more slowly), higher =
-      // snappier. Tuned so a hard flick still glides through rather than
-      // teleporting, without ever feeling stuck or unresponsive.
       const RESISTANCE = 0.06;
 
       const handleTick = () => {
@@ -963,7 +950,8 @@ export default function Home() {
         }
 
         .outline-text {
-          -webkit-text-stroke: 1px rgba(242, 240, 235, 0.85);
+          -webkit-text-stroke: 1px rgba(242, 240, 235, 0.75);
+          text-shadow: 0 0 40px rgba(183, 101, 60, 0.15);
           color: transparent;
         }
 
@@ -1152,7 +1140,7 @@ export default function Home() {
           }
 
           .outline-text {
-            -webkit-text-stroke: 0.8px rgba(242, 240, 235, 0.72);
+            -webkit-text-stroke: 0.8px rgba(242, 240, 235, 0.65);
           }
         }
 
@@ -1235,248 +1223,215 @@ export default function Home() {
         </nav>
       </div>
 
-      {/* HERO SECTION */}
-      <section
-        ref={heroRef}
-        className="relative z-10 flex min-h-[100svh] flex-col justify-between overflow-hidden px-5 pb-10 pt-32 sm:px-6 sm:pb-12 sm:pt-36 md:min-h-screen md:px-10 md:pb-14 bg-[#080808]"
-      >
-        <div
-          className={`pointer-events-none absolute left-1/2 top-1/2 h-[86vw] w-[86vw] max-h-[900px] max-w-[900px] -translate-x-1/2 -translate-y-1/2 rounded-full blur-[90px] sm:blur-[110px] transition-opacity duration-1000 ${
-            isWebGLVisible ? "opacity-45" : "opacity-0"
-          }`}
-          style={{
-            background: `radial-gradient(circle at ${50 + mouse.normalizedX * 20}% ${50 + mouse.normalizedY * 20}%, rgba(150,180,160,0.20), rgba(100,120,110,0.06) 35%, transparent 70%)`,
-          }}
-        />
-
-        <div
-          className="pointer-events-none absolute left-1/2 top-1/2 z-[2] h-[280px] w-[280px] -translate-x-1/2 -translate-y-1/2 rounded-full opacity-25 blur-[80px] transition-transform duration-700 ease-out sm:h-[400px] sm:w-[400px] sm:blur-[100px]"
-          style={{
-            transform: `translate(calc(-50% + ${lightX}px), calc(-50% + ${lightY}px))`,
-            background: "radial-gradient(circle, rgba(220,235,225,0.12), transparent 65%)",
-          }}
-        />
-
-        {showWebGL && (
-          <div
-            style={{ opacity: isWebGLVisible ? 1 : 0 }}
-            className={`pointer-events-none absolute left-1/2 top-1/2 z-[5] h-[49vh] w-[86vw] sm:h-[65vh] sm:w-[70vw] md:h-[75vh] md:w-[70vw] reveal-item reveal-webgl ${
-              isWebGLVisible ? "is-revealed" : ""
-            }`}
-          >
-            <div
-              style={{
-                transform: `rotateX(${heroRotateX}deg) rotateY(${heroRotateY}deg)`,
-                transition: "transform 700ms cubic-bezier(0.16, 1, 0.3, 1)",
-                width: "100%",
-                height: "100%",
-              }}
-            >
-              <HeroWebGL />
-            </div>
-          </div>
-        )}
-
-        {/* HERO TYPOGRAPHY */}
-        <div className="relative z-20 my-auto flex flex-col items-start justify-center">
-          <h1 className="select-none text-[22vw] font-light leading-[0.74] tracking-[-0.11em] sm:text-[20vw] md:text-[16.5vw]">
-            <span 
-              style={{ opacity: isTypographyVisible ? 1 : 0 }}
-              className={`block reveal-item reveal-jw ${isTypographyVisible ? "is-revealed" : ""}`}
-            >
-              JW
-            </span>
-            <span 
-              style={{ opacity: isTypographyVisible ? 1 : 0 }}
-              className={`outline-text block ml-[12vw] sm:ml-[16vw] reveal-item reveal-studio ${isTypographyVisible ? "is-revealed" : ""}`}
-            >
-              STUDIO
-            </span>
-          </h1>
-
-          <div 
-            style={{ opacity: isTypographyVisible ? 1 : 0 }}
-            className={`mt-8 flex items-center gap-4 sm:mt-12 sm:ml-[16vw] reveal-item reveal-tag ${isTypographyVisible ? "is-revealed" : ""}`}
-          >
-            <span className="h-px w-8 bg-white/40 sm:w-12" />
-            <span className="text-[10px] uppercase tracking-[0.4em] text-white/70 sm:text-xs">
-              Digital Craft &amp; Interactive Systems
-            </span>
-          </div>
-        </div>
-
-        <div 
-          style={{ opacity: isNavVisible ? 1 : 0 }}
-          className={`absolute bottom-10 right-6 hidden items-center gap-3 text-[9px] uppercase tracking-[0.2em] text-white/30 md:flex reveal-item ${isNavVisible ? "is-revealed" : ""}`}
-        >
-          <span>Scroll</span>
-          <span className="h-12 w-px bg-white/20" />
-        </div>
-      </section>
-
-      {/* INTRO IMMERSIVE FULLSCREEN SCROLL TRIGGER */}
+      {/* HERO / INTRO SECTION (Pinned Composition containing Hero and Intro as absolutely positioned layers sharing the exact same vertical grid positions) */}
       <section
         id="studio"
         ref={studioSectionRef}
-        className="relative z-30 bg-[#080808] shadow-[0_-30px_60px_rgba(0,0,0,0.9)]"
-        style={{ height: "620vh" }}
+        className="relative z-40 bg-[#080808]"
+        style={{ height: "680vh" }}
       >
         <div
           ref={studioPinRef}
           className="absolute inset-0 h-screen w-full flex flex-col items-center justify-center bg-[#080808] overflow-hidden px-6"
         >
-          {/* IMMERSIVE STUDIO TAKEOVER LAYER */}
+          {/* BACKGROUND LIGHT / WEBGL EFFECTS CONTAINER (Bottom Layer of the Pinned View) */}
+          <div
+            ref={heroRef}
+            className="absolute inset-0 z-0 flex flex-col justify-between px-5 pb-10 pt-32 sm:px-6 sm:pb-12 sm:pt-36 md:px-10 md:pb-14 pointer-events-none"
+          >
+            <div className="pointer-events-none absolute inset-0 z-[15] flex justify-between px-[6%] opacity-[0.12] sm:px-[10%]">
+              <div className="h-full w-[1px] bg-gradient-to-b from-transparent via-white to-transparent" />
+              <div className="h-full w-[1px] bg-gradient-to-b from-transparent via-white to-transparent hidden sm:block" />
+              <div className="h-full w-[1px] bg-gradient-to-b from-transparent via-white to-transparent" />
+              <div className="h-full w-[1px] bg-gradient-to-b from-transparent via-white to-transparent hidden md:block" />
+              <div className="h-full w-[1px] bg-gradient-to-b from-transparent via-white to-transparent" />
+            </div>
+
+            <div
+              className={`pointer-events-none absolute left-1/2 top-1/2 h-[86vw] w-[86vw] max-h-[900px] max-w-[900px] -translate-x-1/2 -translate-y-1/2 rounded-full blur-[90px] sm:blur-[110px] transition-opacity duration-1000 ${
+                isWebGLVisible ? "opacity-50" : "opacity-0"
+              }`}
+              style={{
+                background: `radial-gradient(circle at ${50 + mouse.normalizedX * 20}% ${50 + mouse.normalizedY * 20}%, rgba(183,101,60,0.18), rgba(120,60,35,0.06) 40%, transparent 70%)`,
+              }}
+            />
+
+            <div
+              className="pointer-events-none absolute left-1/2 top-1/2 z-[2] h-[280px] w-[280px] -translate-x-1/2 -translate-y-1/2 rounded-full opacity-30 blur-[80px] transition-transform duration-700 ease-out sm:h-[400px] sm:w-[400px] sm:blur-[100px]"
+              style={{
+                transform: `translate(calc(-50% + ${lightX}px), calc(-50% + ${lightY}px))`,
+                background: "radial-gradient(circle, rgba(210,115,65,0.14), transparent 65%)",
+              }}
+            />
+
+            {showWebGL && (
+              <div
+                style={{ opacity: isWebGLVisible ? 1 : 0 }}
+                className={`pointer-events-none absolute left-1/2 top-1/2 z-[5] h-[49vh] w-[86vw] sm:h-[65vh] sm:w-[70vw] md:h-[75vh] md:w-[70vw] reveal-item reveal-webgl ${
+                  isWebGLVisible ? "is-revealed" : ""
+                }`}
+              >
+                <div
+                  style={{
+                    transform: `rotateX(${heroRotateX}deg) rotateY(${heroRotateY}deg)`,
+                    transition: "transform 700ms cubic-bezier(0.16, 1, 0.3, 1)",
+                    width: "100%",
+                    height: "100%",
+                  }}
+                >
+                  <HeroWebGL />
+                </div>
+              </div>
+            )}
+
+            <div className="relative z-20 my-auto flex flex-col items-start justify-center">
+              <h1 className="select-none text-[22vw] font-medium leading-[0.74] tracking-[-0.085em] sm:text-[20vw] md:text-[16.5vw]">
+                <span 
+                  style={{ opacity: isTypographyVisible ? 1 : 0, fontWeight: 700 }}
+                  className={`block tracking-[-0.06em] reveal-item reveal-jw ${isTypographyVisible ? "is-revealed" : ""}`}
+                >
+                  JW
+                </span>
+                <span 
+                  style={{ opacity: isTypographyVisible ? 1 : 0 }}
+                  className={`outline-text block font-extrabold ml-[12vw] sm:ml-[16vw] reveal-item reveal-studio ${isTypographyVisible ? "is-revealed" : ""}`}
+                >
+                  STUDIO
+                </span>
+              </h1>
+
+              <div 
+                style={{ opacity: isTypographyVisible ? 1 : 0 }}
+                className={`mt-8 flex items-center gap-4 sm:mt-12 sm:ml-[16vw] reveal-item reveal-tag ${isTypographyVisible ? "is-revealed" : ""}`}
+              >
+                <span className="h-px w-8 bg-[#B7653C]/70 sm:w-12" />
+                <span className="text-[10px] uppercase tracking-[0.4em] text-white/70 sm:text-xs">
+                  Digital Craft &amp; Interactive Systems
+                </span>
+              </div>
+            </div>
+
+            <div 
+              style={{ opacity: isNavVisible ? 1 : 0 }}
+              className={`absolute bottom-10 right-6 hidden items-center gap-3 text-[9px] uppercase tracking-[0.2em] text-white/30 md:flex reveal-item ${isNavVisible ? "is-revealed" : ""}`}
+            >
+              <span>Scroll</span>
+              <span className="h-12 w-px bg-white/20" />
+            </div>
+          </div>
+
+          {/* INTRO LAYER (Top Layer, initially translated 100% below the viewport and covering the bottom layer as yPercent moves from 100 to 0) */}
           <div
             ref={studioTakeoverRef}
-            className="absolute inset-0 z-[5] pointer-events-none bg-[#080808]"
-            aria-hidden="true"
-          />
-
-          {/* LIVE EDITORIAL IMAGE LAYERS */}
-          <div className="absolute inset-0 z-20 pointer-events-none overflow-hidden">
-            {[
-              "/images/studio-exist.jpg",
-              "/images/studio-occupy.jpg",
-              "/images/studio-blend.jpg",
-              "/images/studio-perform.jpg",
-            ].map((src, index) => (
-              <div
-                key={src}
-                ref={(el) => {
-                  studioImageRefs.current[index] = el;
-                }}
-                className={`absolute overflow-hidden bg-[#111] shadow-2xl ${
-                  index === 0
-                    ? "left-[7vw] top-[28%] h-[44vh] w-[31vw] max-w-[520px]"
-                    : index === 1
-                      ? "right-[-4vw] top-[18%] h-[58vh] w-[43vw] max-w-[720px]"
-                      : index === 2
-                        ? "left-[18vw] top-[16%] h-[68vh] w-[50vw] max-w-[780px] opacity-80"
-                        : "right-[8vw] top-[12%] h-[72vh] w-[46vw] max-w-[760px]"
-                }`}
-                style={{
-                  backgroundImage: `url(${src})`,
-                  backgroundSize: "cover",
-                  backgroundPosition: index === 0 ? "center" : "center",
-                }}
-              />
-            ))}
-          </div>
-
-          {/* FIRST COMPOSITION LINE */}
-          <p
-            ref={studioIntroRef}
-            className={`${sans.className} absolute left-1/2 top-[30%] z-[25] -translate-x-1/2 text-center text-[clamp(0.65rem,1.1vw,1rem)] font-medium uppercase tracking-[0.28em] text-white/55`}
+            className="absolute inset-0 z-30 bg-[#080808] flex flex-col items-center justify-center overflow-hidden px-6 will-change-transform"
           >
-            Websites should do more than
-          </p>
+            {/* DYNAMIC BACKGROUND GROWING LINES CONTAINER */}
+            <div
+              ref={linesBgRef}
+              className="pointer-events-none absolute inset-0 z-[12] transition-transform duration-300 ease-out"
+            />
 
-          {/* ARTISTICALLY MASSIVE VERBS */}
-          <div
-            ref={verbContainerRef}
-            className={`${sans.className} absolute inset-0 z-10 flex items-center justify-center overflow-visible pointer-events-none`}
-          >
-            {verbs.map((verb, idx) => (
-              <span
-                key={verb}
-                ref={(el) => {
-                  verbRefs.current[idx] = el;
-                }}
-                className={`absolute text-center uppercase tracking-[-0.04em] font-black select-none will-change-transform ${
-                  idx === 3
-                    ? "text-[clamp(4.5rem,16vw,22rem)] text-white drop-shadow-[0_0_100px_rgba(255,255,255,0.25)]"
-                    : "text-[clamp(4rem,15vw,20rem)] text-white/90"
-                }`}
-              >
-                {verb}
-              </span>
-            ))}
-          </div>
+            {/* FILM CAMERA VERTICAL LINES OVERLAY FOR INTRO MATCHING HERO GRID ALIGNMENT */}
+            <div className="pointer-events-none absolute inset-0 z-[15] flex justify-between px-[6%] opacity-[0.38] sm:px-[10%]">
+              <div className="h-full w-[1.5px] bg-gradient-to-b from-transparent via-[#3b82f6] to-transparent shadow-[0_0_12px_rgba(59,130,246,0.6)]" />
+              <div className="h-full w-[1.5px] bg-gradient-to-b from-transparent via-[#f97316] to-transparent shadow-[0_0_12px_rgba(249,115,22,0.6)] hidden sm:block" />
+              <div className="h-full w-[1.5px] bg-gradient-to-b from-transparent via-[#3b82f6] to-transparent shadow-[0_0_12px_rgba(59,130,246,0.6)]" />
+              <div className="h-full w-[1.5px] bg-gradient-to-b from-transparent via-[#f97316] to-transparent shadow-[0_0_12px_rgba(249,115,22,0.6)] hidden md:block" />
+              <div className="h-full w-[1.5px] bg-gradient-to-b from-transparent via-[#3b82f6] to-transparent shadow-[0_0_12px_rgba(59,130,246,0.6)]" />
+            </div>
 
-          {/* ISOLATED PORTFOLIO TAKEOVER STATEMENT */}
-          <div
-            ref={cardRef}
-            className={`absolute inset-0 z-30 flex flex-col items-center justify-center bg-[#080808] px-6 text-center ${
-              cardVisible ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0"
-            }`}
-          >
-            <div className="max-w-4xl mx-auto flex flex-col items-center">
-              <h3 className={`${sans.className} text-[clamp(2.5rem,6.5vw,6rem)] font-bold leading-[1.05] tracking-[-0.04em] text-white mb-8`}>
-                Building the portfolio at lower rates.
-              </h3>
-              <a
-                href="#contact"
-                className="group inline-flex items-center gap-4 text-xs uppercase tracking-[0.3em] text-white border-b border-white/40 pb-2 transition-all duration-500 hover:border-white hover:tracking-[0.35em]"
-              >
-                <span>Initiate Project</span>
-                <span className="transition-transform duration-500 group-hover:translate-x-1">↗</span>
-              </a>
+            {/* LIVE EDITORIAL IMAGE LAYERS */}
+            <div className="absolute inset-0 z-20 pointer-events-none overflow-hidden">
+              {[
+                "/images/studio-exist.jpg",
+                "/images/studio-occupy.jpg",
+                "/images/studio-blend.jpg",
+                "/images/studio-perform.jpg",
+              ].map((src, index) => (
+                <div
+                  key={src}
+                  ref={(el) => {
+                    studioImageRefs.current[index] = el;
+                  }}
+                  className={`absolute overflow-hidden bg-[#111] shadow-2xl ${
+                    index === 0
+                      ? "left-[7vw] top-[28%] h-[44vh] w-[31vw] max-w-[520px]"
+                      : index === 1
+                        ? "right-[-4vw] top-[18%] h-[58vh] w-[43vw] max-w-[720px]"
+                        : index === 2
+                          ? "left-[18vw] top-[16%] h-[68vh] w-[50vw] max-w-[780px] opacity-80"
+                          : "right-[8vw] top-[12%] h-[72vh] w-[46vw] max-w-[760px]"
+                  }`}
+                  style={{
+                    backgroundImage: `url(${src})`,
+                    backgroundSize: "cover",
+                    backgroundPosition: index === 0 ? "center" : "center",
+                  }}
+                />
+              ))}
+            </div>
+
+            {/* FIRST COMPOSITION LINE */}
+            <p
+              ref={studioIntroRef}
+              className={`${sans.className} absolute left-1/2 top-[30%] z-[25] -translate-x-1/2 text-center text-[clamp(0.65rem,1.1vw,1rem)] font-medium uppercase tracking-[0.28em] text-white/55`}
+            >
+              Websites should do more than
+            </p>
+
+            {/* ARTISTICALLY MASSIVE VERBS */}
+            <div
+              ref={verbContainerRef}
+              className={`${sans.className} absolute inset-0 z-10 flex items-center justify-center overflow-visible pointer-events-none`}
+            >
+              {verbs.map((verb, idx) => (
+                <span
+                  key={verb}
+                  ref={(el) => {
+                    verbRefs.current[idx] = el;
+                  }}
+                  className={`absolute text-center uppercase tracking-[-0.04em] font-black select-none will-change-transform ${
+                    idx === 0
+                      ? "text-[clamp(4.5rem,16vw,22rem)] text-white drop-shadow-[0_0_60px_rgba(59,130,246,0.4)]"
+                      : idx === 3
+                        ? "text-[clamp(4.5rem,16vw,22rem)] text-white drop-shadow-[0_0_100px_rgba(255,255,255,0.25)]"
+                        : "text-[clamp(4rem,15vw,20rem)] text-white/90"
+                  }`}
+                >
+                  {verb}
+                </span>
+              ))}
+            </div>
+
+            {/* ISOLATED PORTFOLIO TAKEOVER STATEMENT */}
+            <div
+              ref={cardRef}
+              className={`absolute inset-0 z-30 flex flex-col items-center justify-center bg-[#080808] px-6 text-center ${
+                cardVisible ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0"
+              }`}
+            >
+              <div className="absolute inset-0 pointer-events-none overflow-hidden z-0">
+                <div className="absolute -left-[20%] top-0 h-full w-[45%] bg-gradient-to-r from-orange-600/30 to-transparent blur-3xl" />
+                <div className="absolute -right-[20%] top-0 h-full w-[45%] bg-gradient-to-l from-blue-600/30 to-transparent blur-3xl" />
+              </div>
+              <div className="max-w-4xl mx-auto flex flex-col items-center relative z-10">
+                <h3 className={`${sans.className} text-[clamp(2.5rem,6.5vw,6rem)] font-bold leading-[1.05] tracking-[-0.04em] text-white mb-8`}>
+                  Building the portfolio at lower rates.
+                </h3>
+                <a
+                  href="#contact"
+                  className="group inline-flex items-center gap-4 text-xs uppercase tracking-[0.3em] text-white border-b border-white/40 pb-2 transition-all duration-500 hover:border-white hover:tracking-[0.35em]"
+                >
+                  <span>Initiate Project</span>
+                  <span className="transition-transform duration-500 group-hover:translate-x-1">↗</span>
+                </a>
+              </div>
             </div>
           </div>
         </div>
       </section>
 
       <Portfolio />
-
-      {/* SERVICES */}
-      <section
-        id="services"
-        className="relative overflow-hidden border-y border-white/10 px-5 py-24 sm:px-6 sm:py-32 md:px-10 md:py-48"
-      >
-        <div className="absolute right-[-25vw] top-1/2 h-[65vw] w-[65vw] -translate-y-1/2 rounded-full border border-white/[0.06] sm:right-[-10vw] sm:h-[35vw] sm:w-[35vw]" />
-
-        <div className="grid gap-16 sm:gap-20 md:grid-cols-12">
-          <div className="md:col-span-4">
-            <p className="text-[9px] uppercase tracking-[0.2em] text-white/35">
-              03 / Capabilities
-            </p>
-          </div>
-
-          <div className="md:col-span-7 md:col-start-6">
-            {[
-              ["01", "Web Design"],
-              ["02", "Development"],
-              ["03", "Motion & Interaction"],
-              ["04", "Digital Identity"],
-            ].map(([number, title]) => (
-              <div
-                key={number}
-                className="group flex items-center justify-between border-b border-white/10 py-6 transition-colors duration-500 hover:border-white/40 sm:py-7"
-              >
-                <div className="flex items-center gap-5 sm:gap-8">
-                  <span className="text-[9px] text-white/25">
-                    {number}
-                  </span>
-
-                  <span className="text-[clamp(1.65rem,4vw,4rem)] font-light tracking-[-0.05em] transition-transform duration-500 group-hover:translate-x-3">
-                    {title}
-                  </span>
-                </div>
-
-                <span className="ml-4 shrink-0 text-white/30 transition-transform duration-500 group-hover:translate-x-2 group-hover:text-white">
-                  ↗
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* STATEMENT */}
-      <section className="relative px-5 py-32 sm:px-6 sm:py-40 md:px-10 md:py-64">
-        <div className="mx-auto max-w-[1400px] text-center">
-          <p className="mb-8 text-[9px] uppercase tracking-[0.25em] text-white/30 sm:mb-10">
-            Built for the screen
-          </p>
-
-          <h2 className="text-[clamp(3.2rem,10vw,10rem)] font-light leading-[0.82] tracking-[-0.08em]">
-            <span className="block">MAKE IT</span>
-            <span className={`${serif.className} italic text-white/50`}>
-              memorable.
-            </span>
-          </h2>
-        </div>
-      </section>
 
       {/* CONTACT */}
       <section
