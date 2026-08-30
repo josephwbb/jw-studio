@@ -6,6 +6,7 @@ import dynamic from "next/dynamic";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 
+
 const sans = Plus_Jakarta_Sans({
   subsets: ["latin"],
   weight: ["300", "400", "500", "600", "700"],
@@ -20,6 +21,9 @@ const serif = Cormorant_Garamond({
 const HeroWebGL = dynamic(() => import("./components/HeroWebGL"), {
   ssr: false,
 });
+
+import Portfolio from "./components/Portfolio";
+
 
 const projects = [
   {
@@ -1412,84 +1416,7 @@ export default function Home() {
         </div>
       </section>
 
-      {/* SELECTED WORK */}
-      <section
-        id="work"
-        className="relative z-30 bg-[#080808] px-5 pb-24 sm:px-6 sm:pb-32 md:px-10 md:pb-48"
-      >
-        <div className="mb-12 flex items-end justify-between border-b border-white/10 pb-5 sm:mb-16">
-          <p className="text-[9px] uppercase tracking-[0.2em] text-white/35">
-            02 / Selected work
-          </p>
-
-          <p className="text-[9px] uppercase tracking-[0.2em] text-white/30">
-            03 projects
-          </p>
-        </div>
-
-        <div className="space-y-20 sm:space-y-24 md:space-y-40">
-          {projects.map((project) => (
-            <article
-              key={project.title}
-              className="project-card group relative"
-            >
-              <div className="mb-5 flex items-end justify-between">
-                <div className="flex items-center gap-4">
-                  <span className="text-[10px] text-white/30">
-                    {project.number}
-                  </span>
-
-                  <span className="text-[9px] uppercase tracking-[0.14em] text-white/40 sm:text-[10px] sm:tracking-[0.16em]">
-                    {project.category}
-                  </span>
-                </div>
-
-                <span className="hidden text-[9px] uppercase tracking-[0.2em] text-white/30 md:block">
-                  View project ↗
-                </span>
-              </div>
-
-              <a
-                href={project.href}
-                className="relative block aspect-[4/3] overflow-hidden bg-[#111] sm:aspect-[16/9]"
-              >
-                <div
-                  className="project-image absolute inset-0 bg-cover bg-center"
-                  style={{
-                    backgroundImage: `url(${project.image})`,
-                  }}
-                />
-
-                <div className="absolute inset-0 bg-black/10 transition-colors duration-700 group-hover:bg-black/0" />
-
-                <div className="absolute bottom-5 left-5 right-16 sm:bottom-6 sm:left-6 md:bottom-10 md:left-10">
-                  <h2 className="text-[clamp(1.9rem,5vw,5rem)] font-light leading-[0.92] tracking-[-0.06em]">
-                    {project.title}
-                  </h2>
-                </div>
-
-                <div className="absolute bottom-5 right-5 flex h-10 w-10 items-center justify-center rounded-full border border-white/30 bg-black/10 text-base backdrop-blur-sm transition-all duration-500 group-hover:scale-110 group-hover:bg-white group-hover:text-black sm:bottom-6 sm:right-6 sm:h-12 sm:w-12 sm:text-lg md:bottom-10 md:right-10">
-                  ↗
-                </div>
-              </a>
-
-              <div className="mt-5 flex flex-col justify-between gap-4 md:flex-row">
-                <p className="max-w-md text-xs leading-6 text-white/40">
-                  {project.description}
-                </p>
-
-                <div className="flex gap-2 text-[8px] uppercase tracking-[0.12em] text-white/30 sm:text-[9px] sm:tracking-[0.15em]">
-                  <span>Design</span>
-                  <span>·</span>
-                  <span>Development</span>
-                  <span>·</span>
-                  <span>Motion</span>
-                </div>
-              </div>
-            </article>
-          ))}
-        </div>
-      </section>
+      <Portfolio />
 
       {/* SERVICES */}
       <section
